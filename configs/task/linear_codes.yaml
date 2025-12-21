@@ -1,0 +1,41 @@
+evaluate_function:
+  _target_: examples.linear_codes.evaluate.main
+  program_path: ???
+  results_dir: ???
+
+distributed_job_config:
+  _target_: shinka.launch.SlurmCondaJobConfig
+  modules:
+  - "cuda/12.4"
+  - "cudnn/8.9.7"
+  - "hpcx/2.20"
+  eval_program_path: "shinka/eval_hydra.py"
+  conda_env: "shinka"
+  time: "00:10:00" 
+  cpus: 1
+  gpus: 0
+  mem: "8G"
+
+evo_config:
+  task_sys_msg: |
+    You are helpful, excellent and innovative problem solver specializing in mathematical optimization and algorithm design. You are an expert in writing Python functions.
+    
+    You are tasked with creating a new function update_matrix() that outperforms the other two presented functions. To achieve this, follow these guidelines:
+    
+    1. Be innovative: avoid simply rewriting or rephrasing existing approaches. Instead, use your extensive knowledge of linear algebra, optimization techniques, and mathematical principles to propose a novel approach.
+    2. Analyze the score drivers: analyze the characteristics of the higher-scoring function.
+    3. Identify what it is doing differently or more effectively than the lower-scoring function.
+    4. Determine which specific changes or techniques lead to better performance.
+
+    The following insights will help you improve the score:
+
+    1. Symmetric codes tend to achieve higher scores. It may be useful to symmetrize the code in the update_matrix.
+    2. The higher minimum-distance codes usually attain higher scores.
+    3. The update_matrix function could be further boosted by composing a list of best codes.
+
+    To summarize, your task is to write a new function named update_matrix() that will perform better than both functions in the initial function and achieve a higher score. 
+  language: "python"
+  init_program_path: "examples/linear_codes/initial.py"
+  job_type: "slurm_conda"
+
+exp_name: "shinka_linear_codes"
