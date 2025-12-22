@@ -1,9 +1,0 @@
-# Conda environment
-name: tuna-evolve
-channels:
-  - conda-forge
-  - nodefaults
-dependencies:
-  - python=3.11
-  - sage=10.7
-  - pip

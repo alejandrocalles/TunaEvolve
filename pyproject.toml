@@ -46,6 +46,7 @@ dependencies = [
     "markdown",
     "aiofiles",
     "google-generativeai",
+    "galois>=0.4.9",
 ]
 
 [tool.setuptools]
