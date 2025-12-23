@@ -6,19 +6,11 @@ import os
 import json
 import argparse
 import numpy as np
+import galois
 from typing import Tuple, Optional, List, Dict, Any
 
 from shinka.core import run_shinka_eval
 
-
-def is_degenerate(matrix):
-    # Check if two rows are the same
-    rows = [tuple(row) for row in matrix]
-    if len(rows) != len(set(rows)):
-        return True
-    else:
-        return False
-    
 def adapted_validate_codes(
     run_output: Tuple[np.ndarray, List[float], int],
     atol=1e-6,
@@ -36,19 +28,20 @@ def adapted_validate_codes(
 
     n=80
     k=20
-    from sage.all import matrix, LinearCode, GF
-    sage_code=LinearCode(matrix(GF(2),code))
+    galois_code = galois.GF(2)(code)
 
-    if not isinstance(code, np.ndarray): return False, f"OUTPUT_STRUCT ERROR: The output structure is not a numpy array: {code}"
-    if not code.shape==(k, n): return False, f"SIZE ERROR: The output structure is not of the right size: {code}"
-    if sage_code.dimension()!=k: return False, f"RANK ERROR: The output structure is a degenerate matrix: {code}"
+    if not isinstance(code, np.ndarray):
+        return False, f"OUTPUT_STRUCT ERROR: The output structure is not a numpy array: {code}"
+    if not code.shape == (k, n):
+        return False, f"SIZE ERROR: The output structure is not of the right size: {code}"
+    if np.linalg.matrix_rank(galois_code) != k:
+        return False, f"RANK ERROR: The output structure is a degenerate matrix: {code}"
     return True, "All the checks were passed, continuing"
 
 
 def get_linear_codes_kwargs(run_index: int) -> Dict[str, Any]:
     """Provides keyword arguments for linear codes runs (none needed)."""
     return {}
-
 
 def aggregate_linear_codes_metrics(
     results: List[Tuple[np.ndarray, List[float], int]], results_dir: str

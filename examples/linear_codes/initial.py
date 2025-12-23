@@ -30,7 +30,7 @@ class LinearCode:
         
         # Calculate weights (number of non-zero elements per row)
         # Using np.count_nonzero on the underlying array is faster
-        weights = np.count_nonzero(C, axis=1)
+        weights = np.count_nonzero(np.array(C), axis=1)
         
         # Return frequency distribution padded to length n+1
         return np.bincount(weights, minlength=n+1)
