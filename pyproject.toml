@@ -47,6 +47,7 @@ dependencies = [
     "aiofiles",
     "google-generativeai",
     "galois>=0.4.9",
+    "vllm>=0.13.0",
 ]
 
 [tool.setuptools]
