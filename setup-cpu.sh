@@ -34,4 +34,4 @@ echo "Cleaning up temporary directory '$TEMP_DIR'..."
 popd > /dev/null
 rm -rf "$TEMP_DIR"
 
-
+echo "Installation complete, you can now run the program with 'uv run --no-sync ...'"

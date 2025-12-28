@@ -11,6 +11,7 @@ from .models.pricing import (
     OPENAI_MODELS,
     DEEPSEEK_MODELS,
     GEMINI_MODELS,
+    LOCAL_VLLM_MODELS,
 )
 
 env_path = Path(__file__).parent.parent.parent / ".env"
@@ -78,6 +79,23 @@ def get_client_llm(model_name: str, structured_output: bool = False) -> Tuple[An
                 client,
                 mode=instructor.Mode.GEMINI_JSON,
             )
+    elif model_name in LOCAL_VLLM_MODELS.keys():
+        client = openai.OpenAI(
+            api_key="EMPTY", # vLLM requires a placeholder API key
+            base_url="http://localhost:8000/v1",
+        )
+        if structured_output:
+            client = instructor.from_openai(client, mode=instructor.Mode.MD_JSON)
+    elif model_name.startswith("local-"):
+        # get rid of the local- prefix
+        model_name = model_name.split("local-")[-1]
+        client = openai.OpenAI(
+            api_key="EMPTY", # vLLM requires a placeholder API key
+            base_url="http://localhost:8000/v1",
+        )
+        if structured_output:
+            client = instructor.from_openai(client, mode=instructor.Mode.MD_JSON)
+        setattr(client, "_has_local_provider", True)
     else:
         raise ValueError(f"Model {model_name} not supported.")
 
