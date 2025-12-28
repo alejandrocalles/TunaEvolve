@@ -27,7 +27,7 @@ def backoff_handler(details):
     max_value=20,
     on_backoff=backoff_handler,
 )
-def query_openai(
+def query_local_vllm(
     client,
     model,
     msg,
