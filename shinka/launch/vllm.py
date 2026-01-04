@@ -9,9 +9,17 @@ import psutil
 logger = logging.getLogger(__name__)
 
 class VLLMServer:
-    def __init__(self, model_path: str, model_name: str, host: str = "0.0.0.0", port: int = 8000):
+    def __init__(
+        self,
+        model_path: str,
+        model_name: str,
+        gpu_memory_utilization: float = 0.9,
+        host: str = "0.0.0.0",
+        port: int = 8000
+    ):
         self.model_path = model_path
         self.model_name = model_name
+        self.gpu_memory_utilization = gpu_memory_utilization
         self.host = host
         self.port = port
         self.process = None
@@ -27,6 +35,7 @@ class VLLMServer:
             "--served-model-name", self.model_name,
             "--port", f"{self.port}",
             "--host", self.host,
+            "--gpu-memory-utilization", f"{self.gpu_memory_utilization}",
             "--trust-remote-code",
             "--dtype", "auto"
         ]
@@ -98,16 +107,25 @@ def main():
         "--model",
         type=str
     )
-
     parser.add_argument(
         "-p",
         "--port",
         type=int,
         default=8000
     )
+    parser.add_argument(
+        "--gpu-memory-utilization",
+        type=float,
+        default=0.9
+    )
     args = parser.parse_args()
 
-    with VLLMServer(model_path=args.model, model_name=args.model, port=args.port):
+    with VLLMServer(
+        model_path=args.model,
+        model_name=args.model,
+        gpu_memory_utilization=args.gpu_memory_utilization,
+        port=args.port,
+    ):
         logger.info("Press Ctrl+C to stop the vLLM server.")
         try:
             while True:
