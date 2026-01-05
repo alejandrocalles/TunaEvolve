@@ -173,6 +173,13 @@ BEDROCK_MODELS = {
     ],
 }
 
+LOCAL_VLLM_MODELS = {
+    "qwen/qwen3-4b" : {
+        "input_price": 0.0 / M,
+        "output_price": 0.0 / M,
+    },
+}
+
 REASONING_OAI_MODELS = [
     "o3-mini-2025-01-31",
     "o1-2024-12-17",
