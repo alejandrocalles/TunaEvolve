@@ -38,17 +38,9 @@ uv run shinka/launch/vllm.py --model google/gemma-3-12b-it --port 8000
 
 ## Multiple local models
 
-You may mix and match local models and remote models, but please
-keep in mind that using multiple local models requires passing
-an extra `--gpu-memory-utilization` argument to each vLLM server.
-
-For example, to use `google/gemma-3-12b-it` and `qwen/qwen3-4b` as
-local models, you should follow the following steps:
-
-1. Set `llm_models: ["local-google/gemma-3-12b-it", "local-qwen/qwen3-4b"]` in
-the evolution config
-2. Launch two vLLM servers from two different ports, dividing the GPU memory accordingly.
-Ideally, the sum of the memory utilizations shouldn't exceed `0.9`.
+You may launch multiple local servers but this requires passing
+an extra `--gpu-memory-utilization` argument to each vLLM server,
+making sure that the total utilization doesn't exceed 90%.
 
 ```bash
 # start a server on port 8000 using 60% of GPU memory
@@ -57,3 +49,8 @@ uv run shinka/launch/vllm.py --model google/gemma-3-12b-it --port 8000 --gpu-mem
 # in a separate terminal, start a server on port 8001 using 30% of GPU memory
 uv run shinka/launch/vllm.py --model qwen/qwen3-4b --port 8001 --gpu-memory-utilization 0.3
 ```
+
+However, note that vLLM doesn't support serving two models on the same port,
+so this is not yet interoperable with ShinkaEvolve.
+Also note that launching multiple vLLM servers with a single GPU may
+cause performance issues even if there is enough VRAM.
