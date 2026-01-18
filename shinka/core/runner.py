@@ -15,7 +15,6 @@ from dataclasses import dataclass, field, asdict
 from subprocess import Popen
 import asyncio
 import math
-import enum
 from shinka.launch import JobScheduler, JobConfig, ProcessWithLogging
 from shinka.database import ProgramDatabase, DatabaseConfig, Program
 from shinka.llm import (
@@ -87,7 +86,7 @@ class RunningJob:
     code_embedding: List[float] = field(default_factory=list)
     embed_cost: float = 0.0
     novelty_cost: float = 0.0
-    branch_id: Optional[int] = None
+    branch_id: int = 0
 
 
 # Set up logging
@@ -387,9 +386,7 @@ class PatchJob:
                 f"Error: '{error_str}', "
                 f"Patches Applied: {num_applied_attempt}."
             )
-
             raise PatchJob.PatchError(error_str)
-        
 
         diff_summary = summarize_diff(str(patch_path)) if patch_path else {}
         self.runner.logger.info(
@@ -474,6 +471,7 @@ class PatchJob:
             results_dir=self._results_dirname(),
             start_time=time.time(),
             generation=self.current_gen,
+            branch_id=self.branch_id,
             parent_id=self.parent_program.id if self.parent_program else None,
             archive_insp_ids=[p.id for p in self.archive_programs],
             top_k_insp_ids=[p.id for p in self.top_k_programs],
@@ -2100,10 +2098,10 @@ class TunaEvolutionRunner:
 
     def _run_generation_0(self):
         """Setup and run generation 0 to initialize the database."""
-        initial_dir = f"{self.results_dir}/{FOLDER_PREFIX}_0"
+        initial_dir = f"{self.results_dir}/{FOLDER_PREFIX}_0_branch_0"
         Path(initial_dir).mkdir(parents=True, exist_ok=True)
         exec_fname = f"{initial_dir}/main.{self.lang_ext}"
-        results_dir = f"{self.results_dir}/{FOLDER_PREFIX}_0/results"
+        results_dir = f"{self.results_dir}/{FOLDER_PREFIX}_0_branch_0/results"
         Path(results_dir).mkdir(parents=True, exist_ok=True)
 
         api_costs = 0.0
@@ -2113,7 +2111,7 @@ class TunaEvolutionRunner:
 
         if self.evo_config.init_program_path:
             self.logger.info(
-                f"Copying initial program from {self.evo_config.init_program_path}"
+                f"Copying initial program from {self.evo_config.init_program_path} to {exec_fname}"
             )
             shutil.copy(self.evo_config.init_program_path, exec_fname)
         else:
@@ -2383,6 +2381,7 @@ class TunaEvolutionRunner:
             code=evaluated_code,
             language=self.evo_config.language,
             parent_id=job.parent_id,
+            branch_id=job.branch_id,
             generation=job.generation,
             archive_inspiration_ids=job.archive_insp_ids,
             top_k_inspiration_ids=job.top_k_insp_ids,
@@ -2498,7 +2497,7 @@ class TunaEvolutionRunner:
 
         self.best_program_id = best_program.id
 
-        source_dir = f"{self.results_dir}/{FOLDER_PREFIX}_{best_program.generation}"
+        source_dir = f"{self.results_dir}/{FOLDER_PREFIX}_{best_program.generation}_branch_{best_program.branch_id}"
         best_dir = Path(self.results_dir) / "best"
 
         if best_dir.exists():
@@ -2507,7 +2506,7 @@ class TunaEvolutionRunner:
         shutil.copytree(source_dir, best_dir)
 
         self.logger.info(
-            f"New best program found: gen {best_program.generation}, "
+            f"New best program found: gen {best_program.generation} branch {best_program.branch_id}, "
             f"id {best_program.id[:6]}... "
             f"Copied to {best_dir}"
         )

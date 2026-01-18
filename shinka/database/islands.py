@@ -643,12 +643,12 @@ class CombinedIslandManager:
                 """
                 INSERT INTO programs
                    (id, code, language, parent_id, archive_inspiration_ids,
-                    top_k_inspiration_ids, generation, timestamp, code_diff,
+                    top_k_inspiration_ids, generation, branch_id, timestamp, code_diff,
                     combined_score, public_metrics, private_metrics,
                     text_feedback, complexity, embedding, embedding_pca_2d,
                     embedding_pca_3d, embedding_cluster_id, correct,
                     children_count, metadata, island_idx, migration_history)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                            ?, ?, ?, ?, ?, ?)
                 """,
                 (
@@ -659,6 +659,7 @@ class CombinedIslandManager:
                     archive_insp_ids_json,
                     top_k_insp_ids_json,
                     program.generation,
+                    program.branch_id,
                     program.timestamp,
                     program.code_diff,
                     program.combined_score,

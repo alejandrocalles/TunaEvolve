@@ -146,6 +146,7 @@ class Program:
     )  # IDs of programs used as top-k inspiration
     island_idx: Optional[int] = None
     generation: int = 0
+    branch_id: int = 0
     timestamp: float = field(default_factory=time.time)
     code_diff: Optional[str] = None
 
@@ -362,6 +363,7 @@ class ProgramDatabase:
                 archive_inspiration_ids TEXT,  -- JSON serialized List[str]
                 top_k_inspiration_ids TEXT,    -- JSON serialized List[str]
                 generation INTEGER NOT NULL,
+                branch_id INTEGER NOT NULL,
                 timestamp REAL NOT NULL,
                 code_diff TEXT,     -- Stores edit difference
                 combined_score REAL,
@@ -582,16 +584,17 @@ class ProgramDatabase:
 
         try:
             # Insert the program in a single operation
+            logger.info(f"Inserting program into database with generation {program.generation} and branch {program.branch_id}")
             self.cursor.execute(
                 """
                 INSERT INTO programs
                    (id, code, language, parent_id, archive_inspiration_ids,
-                    top_k_inspiration_ids, generation, timestamp, code_diff,
+                    top_k_inspiration_ids, generation, branch_id, timestamp, code_diff,
                     combined_score, public_metrics, private_metrics,
                     text_feedback, complexity, embedding, embedding_pca_2d,
                     embedding_pca_3d, embedding_cluster_id, correct,
                     children_count, metadata, island_idx, migration_history)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                            ?, ?, ?, ?, ?, ?)
                 """,
                 (
@@ -602,6 +605,7 @@ class ProgramDatabase:
                     archive_insp_ids_json,
                     top_k_insp_ids_json,
                     program.generation,
+                    program.branch_id,
                     program.timestamp,
                     program.code_diff,
                     program.combined_score,
