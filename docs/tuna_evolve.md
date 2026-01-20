@@ -9,7 +9,10 @@ ShinkaEvolve with Reinforcement Learning Fine-Tuning
 # `uv` will create the environment and install the dependencies
 uv sync
 
-# Run the programs using `uv run`
+# Run the main program using `uv run`
+uv run main.py
+
+# You can also run the ShinkaEvolve scripts using `uv run`
 uv run shinka_launch [args...]
 uv run shinka_visualize [args...]
 ```

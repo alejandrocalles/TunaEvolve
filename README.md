@@ -1,3 +1,10 @@
+The following document is the README for the original ShinkaEvolve project.
+For TunaEvolve, please refer to [this document](./docs/tuna_evolve.md)
+
+---
+
+<br>
+
 <h1 align="center">
   <a href="shinka/favicon.png?raw=true"><img src="shinka/favicon.png?raw=true" width="180" /></a><br>
   <b><code>ShinkaEvolve</code>: Towards Open-Ended and Sample-Efficient Program Evolution 🧬</b><br>
