@@ -1,8 +1,10 @@
 import backoff
+import aiolimiter
 import openai
-from .pricing import OPENAI_MODELS
 from .result import QueryResult
 import logging
+from typing import Optional
+from .rate_limiting import rate_limited
 
 logger = logging.getLogger(__name__)
 
@@ -43,10 +45,6 @@ def query_local_vllm(
     :param model: Should match the `--served-model-name` argument used when launching the vLLM server.
     :type model: str
     """
-    local_hostnames = ["localhost", "127.0.0.1"]
-    if not any(name in str(client.base_url) for name in local_hostnames):
-        raise ValueError(f"Local query attempted with remote URL: {client.base_url}")
-
     new_msg_history = msg_history + [{"role": "user", "content": msg}]
     if output_model is None:
         response = client.responses.create(
@@ -65,6 +63,88 @@ def query_local_vllm(
         new_msg_history.append({"role": "assistant", "content": content})
     else:
         response = client.responses.parse(
+            model=model,
+            input=[
+                {"role": "system", "content": system_msg},
+                *new_msg_history,
+            ],
+            text_format=output_model,
+            **kwargs,
+        )
+        content = response.output_parsed
+        new_content = ""
+        for i in content:
+            new_content += i[0] + ":" + i[1] + "\n"
+        new_msg_history.append({"role": "assistant", "content": new_content})
+
+    input_cost = 0.0 * response.usage.input_tokens
+    output_cost = 0.0 * response.usage.output_tokens
+    result = QueryResult(
+        content=content,
+        msg=msg,
+        system_msg=system_msg,
+        new_msg_history=new_msg_history,
+        model_name=model,
+        kwargs=kwargs,
+        input_tokens=response.usage.input_tokens,
+        output_tokens=response.usage.output_tokens,
+        cost=input_cost + output_cost,
+        input_cost=input_cost,
+        output_cost=output_cost,
+        thought="",
+        model_posteriors=model_posteriors,
+    )
+    return result
+
+
+@backoff.on_exception(
+    backoff.expo,
+    (
+        openai.APIConnectionError,
+        openai.APIStatusError,
+        openai.RateLimitError,
+        openai.APITimeoutError,
+    ),
+    max_tries=20,
+    max_value=20,
+    on_backoff=backoff_handler,
+)
+@rate_limited
+async def query_local_vllm_async(
+    client,
+    model,
+    msg,
+    system_msg,
+    msg_history,
+    output_model,
+    model_posteriors=None,
+    rate_limiter: Optional[aiolimiter.AsyncLimiter] = None,
+    **kwargs,
+) -> QueryResult:
+    """
+    Query a model hosted in a local vLLM server.
+
+    :param model: Should match the `--served-model-name` argument used when launching the vLLM server.
+    :type model: str
+    """
+    new_msg_history = msg_history + [{"role": "user", "content": msg}]
+    if output_model is None:
+        response = await client.responses.create(
+            model=model,
+            input=[
+                {"role": "system", "content": system_msg},
+                *new_msg_history,
+            ],
+            **kwargs,
+        )
+        try:
+            content = response.output[0].content[0].text
+        except Exception:
+            # Reasoning models - ResponseOutputMessage
+            content = response.output[1].content[0].text
+        new_msg_history.append({"role": "assistant", "content": content})
+    else:
+        response = await client.responses.parse(
             model=model,
             input=[
                 {"role": "system", "content": system_msg},

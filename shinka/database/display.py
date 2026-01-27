@@ -47,7 +47,7 @@ class DatabaseDisplay:
         table = RichTable(
             title=(
                 f"[bold green]Program Evaluation Summary - "
-                f"Gen {program.generation}[/bold green]"
+                f"Gen {program.generation} Branch {program.branch_id}[/bold green]"
             ),
             border_style="green",
             box=rich.box.ROUNDED,

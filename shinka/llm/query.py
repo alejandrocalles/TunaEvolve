@@ -1,6 +1,7 @@
 from typing import List, Union, Optional, Dict
 import random
 from pydantic import BaseModel
+import aiolimiter
 from .client import get_client_llm
 from .models.pricing import (
     CLAUDE_MODELS,
@@ -22,6 +23,11 @@ from .models import (
     query_deepseek,
     query_gemini,
     query_local_vllm,
+    query_anthropic_async,
+    query_openai_async,
+    query_deepseek_async,
+    query_gemini_async,
+    query_local_vllm_async,
     QueryResult,
 )
 import logging
@@ -218,6 +224,45 @@ def query(
         msg_history,
         output_model,
         model_posteriors=model_posteriors,
+        **kwargs,
+    )
+    return result
+
+async def query_async(
+    model_name: str,
+    msg: str,
+    system_msg: str,
+    msg_history: List = [],
+    output_model: Optional[BaseModel] = None,
+    model_posteriors: Optional[Dict[str, float]] = None,
+    rate_limiter: Optional[aiolimiter.AsyncLimiter] = None,
+    **kwargs,
+) -> QueryResult:
+    """Query the LLM."""
+    client, model_name = get_client_llm(
+        model_name, structured_output=output_model is not None, async_client=True
+    )
+    if model_name in CLAUDE_MODELS.keys() or "anthropic" in model_name:
+        query_fn = query_anthropic_async
+    elif model_name in OPENAI_MODELS.keys():
+        query_fn = query_openai_async
+    elif model_name in DEEPSEEK_MODELS.keys():
+        query_fn = query_deepseek_async
+    elif model_name in GEMINI_MODELS.keys():
+        query_fn = query_gemini_async
+    elif model_name in LOCAL_VLLM_MODELS.keys() or getattr(client, "_has_local_provider", False):
+        query_fn = query_local_vllm_async
+    else:
+        raise ValueError(f"Model {model_name} not supported.")
+    result = await query_fn(
+        client,
+        model_name,
+        msg,
+        system_msg,
+        msg_history,
+        output_model,
+        model_posteriors=model_posteriors,
+        rate_limiter=rate_limiter,
         **kwargs,
     )
     return result

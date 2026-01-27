@@ -18,7 +18,11 @@ env_path = Path(__file__).parent.parent.parent / ".env"
 load_dotenv(dotenv_path=env_path, override=True)
 
 
-def get_client_llm(model_name: str, structured_output: bool = False) -> Tuple[Any, str]:
+def get_client_llm(
+    model_name: str,
+    structured_output: bool = False,
+    async_client: bool = False
+) -> Tuple[Any, str]:
     """Get the client and model for the given model name.
 
     Args:
@@ -32,70 +36,93 @@ def get_client_llm(model_name: str, structured_output: bool = False) -> Tuple[An
     """
     # print(f"Getting client for model {model_name}")
     if model_name in CLAUDE_MODELS.keys():
-        client = anthropic.Anthropic()
+        client = anthropic.AsyncAnthropic() if async_client else anthropic.Anthropic()
         if structured_output:
             client = instructor.from_anthropic(
                 client, mode=instructor.mode.Mode.ANTHROPIC_JSON
             )
     elif model_name in BEDROCK_MODELS.keys():
         model_name = model_name.split("/")[-1]
-        client = anthropic.AnthropicBedrock(
-            aws_access_key=os.getenv("AWS_ACCESS_KEY_ID"),
-            aws_secret_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
-            aws_region=os.getenv("AWS_REGION_NAME"),
+        aws_access_key=os.getenv("AWS_ACCESS_KEY_ID")
+        aws_secret_key=os.getenv("AWS_SECRET_ACCESS_KEY")
+        aws_region=os.getenv("AWS_REGION_NAME")
+        client = anthropic.AsyncAnthropicBedrock(
+            aws_access_key=aws_access_key,
+            aws_secret_key=aws_secret_key,
+            aws_region=aws_region
+        ) if async_client else anthropic.AnthropicBedrock(
+            aws_access_key=aws_access_key,
+            aws_secret_key=aws_secret_key,
+            aws_region=aws_region
         )
         if structured_output:
             client = instructor.from_anthropic(
                 client, mode=instructor.mode.Mode.ANTHROPIC_JSON
             )
     elif model_name in OPENAI_MODELS.keys():
-        client = openai.OpenAI()
+        client = openai.AsyncOpenAI() if async_client else openai.OpenAI()
         if structured_output:
             client = instructor.from_openai(client, mode=instructor.Mode.TOOLS_STRICT)
     elif model_name.startswith("azure-"):
         # get rid of the azure- prefix
         model_name = model_name.split("azure-")[-1]
-        client = openai.AzureOpenAI(
-            api_key=os.getenv("AZURE_OPENAI_API_KEY"),
-            api_version=os.getenv("AZURE_API_VERSION"),
-            azure_endpoint=os.getenv("AZURE_API_ENDPOINT"),
+        api_key=os.getenv("AZURE_OPENAI_API_KEY")
+        api_version=os.getenv("AZURE_API_VERSION")
+        azure_endpoint=os.environ["AZURE_API_ENDPOINT"]
+        client = openai.AsyncAzureOpenAI(
+            api_key=api_key,
+            api_version=api_version,
+            azure_endpoint=azure_endpoint,
+        ) if async_client else openai.AzureOpenAI(
+            api_key=api_key,
+            api_version=api_version,
+            azure_endpoint=azure_endpoint
         )
         if structured_output:
             client = instructor.from_openai(client, mode=instructor.Mode.TOOLS_STRICT)
     elif model_name in DEEPSEEK_MODELS.keys():
-        client = openai.OpenAI(
-            api_key=os.environ["DEEPSEEK_API_KEY"],
-            base_url="https://api.deepseek.com",
+        api_key=os.environ["DEEPSEEK_API_KEY"]
+        base_url="https://api.deepseek.com"
+        client = openai.AsyncOpenAI(
+            api_key=api_key,
+            base_url=base_url,
+        ) if async_client else openai.OpenAI(
+            api_key=api_key,
+            base_url=base_url,
         )
         if structured_output:
             client = instructor.from_openai(client, mode=instructor.Mode.MD_JSON)
     elif model_name in GEMINI_MODELS.keys():
-        client = openai.OpenAI(
-            api_key=os.environ["GEMINI_API_KEY"],
-            base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+        api_key=os.environ["GEMINI_API_KEY"]
+        base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
+        client = openai.AsyncOpenAI(
+            api_key=api_key,
+            base_url=base_url,
+        ) if async_client else openai.OpenAI(
+            api_key=api_key,
+            base_url=base_url
         )
         if structured_output:
             client = instructor.from_openai(
                 client,
                 mode=instructor.Mode.GEMINI_JSON,
             )
-    elif model_name in LOCAL_VLLM_MODELS.keys():
-        client = openai.OpenAI(
-            api_key="EMPTY", # vLLM requires a placeholder API key
-            base_url="http://localhost:8000/v1",
+    elif model_name in LOCAL_VLLM_MODELS.keys() or model_name.startswith("local-"):
+        api_key="EMPTY" # vLLM requires a placeholder API key
+        base_url="http://localhost:8000/v1"
+        client = openai.AsyncOpenAI(
+            api_key=api_key,
+            base_url=base_url,
+        ) if async_client else openai.OpenAI(
+            api_key = api_key,
+            base_url=base_url,
         )
         if structured_output:
             client = instructor.from_openai(client, mode=instructor.Mode.MD_JSON)
-    elif model_name.startswith("local-"):
-        # get rid of the local- prefix
-        model_name = model_name.split("local-")[-1]
-        client = openai.OpenAI(
-            api_key="EMPTY", # vLLM requires a placeholder API key
-            base_url="http://localhost:8000/v1",
-        )
-        if structured_output:
-            client = instructor.from_openai(client, mode=instructor.Mode.MD_JSON)
-        setattr(client, "_has_local_provider", True)
+        if model_name.startswith("local-"):
+            # get rid of the local- prefix
+            model_name = model_name.split("local-")[-1]
+            setattr(client, "_has_local_provider", True)
     else:
         raise ValueError(f"Model {model_name} not supported.")
 

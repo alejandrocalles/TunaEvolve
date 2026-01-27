@@ -4,7 +4,7 @@ defaults:
   - evolution@_global_: small_budget
   - task@_global_: linear_codes
   - cluster@_global_: local
-  - variant@_global_: linear_codes_example
+  - variant@_global_: tuna_linear_codes_example
 
 verbose: false
 results_dir: results

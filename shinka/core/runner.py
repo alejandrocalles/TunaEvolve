@@ -19,6 +19,7 @@ from shinka.launch import JobScheduler, JobConfig, ProcessWithLogging
 from shinka.database import ProgramDatabase, DatabaseConfig, Program
 from shinka.llm import (
     LLMClient,
+    AsyncLLMClient,
     extract_between,
     EmbeddingClient,
     BanditBase,
@@ -33,7 +34,7 @@ from shinka.edit import (
 )
 from shinka.core.sampler import PromptSampler
 from shinka.core.summarizer import MetaSummarizer
-from shinka.core.novelty_judge import NoveltyJudge
+from shinka.core.novelty_judge import NoveltyJudge, AsyncNoveltyJudge
 from shinka.logo import print_gradient_logo
 
 FOLDER_PREFIX = "gen"
@@ -67,6 +68,8 @@ class EvolutionConfig:
     novelty_llm_kwargs: dict = field(default_factory=lambda: {})
     use_text_feedback: bool = False
     num_branches_per_generation: int = 6
+    async_llm_client_kwargs: dict = field(default_factory=lambda: {})
+    novelty_async_llm_client_kwargs: dict = field(default_factory=lambda: {})
 
 
 @dataclass
@@ -222,7 +225,7 @@ class PatchJob:
         for novelty_attempt_index in range(self.runner.evo_config.max_novelty_attempts):
             # Generate patch
             await self._generate_patch(novelty_attempt_index=novelty_attempt_index)
-            if self._accept_patch_novelty():
+            if await self._accept_patch_novelty():
                 # If the patch is accepted, break out of novelty attempts
                 break
 
@@ -270,6 +273,10 @@ class PatchJob:
         # Try to generate and apply patches with retries
         for patch_attempt_idx in range(self.max_patch_attempts):
             try:
+                self.runner.logger.info(
+                    f"STARTING PATCH ATTEMPT {patch_attempt_idx + 1}/{self.runner.evo_config.max_patch_attempts} "
+                    f"Gen {self.current_gen} Branch {self.branch_id} - patch type {self.patch_type}"
+                )
                 llm_response = await self._try_generate_patch(patch_attempt_index=patch_attempt_idx)
                 self._try_parse_and_apply_patch(
                     llm_response=llm_response,
@@ -280,7 +287,7 @@ class PatchJob:
                 self.meta_patch_data["error_attempt"] = str(error)
 
         if self.runner.verbose and self.meta_patch_data["num_applied"] > 0:
-            self.runner._print_metadata_table(self.meta_patch_data, self.current_gen)
+            self.runner._print_metadata_table(self.meta_patch_data, self.current_gen, self.branch_id)
 
     async def _try_generate_patch(self, patch_attempt_index: int) -> QueryResult:
         """
@@ -296,7 +303,7 @@ class PatchJob:
         assert self.parent_program is not None and self.current_gen != 0, "expected this job to have a parent program"
 
         max_patch_attempts = self.runner.evo_config.max_patch_attempts
-        llm_response = self.runner.llm.query(
+        llm_response = await self.runner.llm.query(
             msg=self.user_msg,
             system_msg=self.system_msg,
             msg_history=self.msg_history,
@@ -382,7 +389,8 @@ class PatchJob:
             self.msg_history = llm_response.new_msg_history
 
             self.runner.logger.info(
-                f"  PATCH ATTEMPT {patch_attempt_index + 1}/{self.max_patch_attempts} FAILURE. "
+                f"  PATCH ATTEMPT {patch_attempt_index + 1}/{self.max_patch_attempts} FAILURE "
+                f"for generation {self.current_gen} branch {self.branch_id}. "
                 f"Error: '{error_str}', "
                 f"Patches Applied: {num_applied_attempt}."
             )
@@ -414,7 +422,7 @@ class PatchJob:
         # Update the code_diff
         self.code_diff = patch_txt_attempt
 
-    def _accept_patch_novelty(self) -> bool:
+    async def _accept_patch_novelty(self) -> bool:
         """
         Determines whether the latest generated patch is novel enough.
         Should only be called after `self._generate_patch`.
@@ -445,7 +453,7 @@ class PatchJob:
             return True
 
         # Otherwise check the novelty
-        should_accept, novelty_metadata = novelty_judge.assess_novelty_with_rejection_sampling(
+        should_accept, novelty_metadata = await novelty_judge.assess_novelty_with_rejection_sampling(
             self._exec_filename(), code_embedding, self.parent_program, self.runner.db
         )
 
@@ -1774,7 +1782,7 @@ class TunaEvolutionRunner:
         start_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self.logger.info(f"Evolution run started at {start_time}")
         self.logger.info(f"Results directory: {self.results_dir}")
-        self.logger.info(f"Log file: {log_filename}")
+        self.logger.info(f"Log file: {log_filename if verbose else None}")
         self.logger.info("=" * 80)
         
 
@@ -1812,11 +1820,17 @@ class TunaEvolutionRunner:
             config=job_config,  # type: ignore
             verbose=verbose,
         )
-
-        self.llm = LLMClient(
+        
+        client_kwargs = evo_config.async_llm_client_kwargs
+        valid_keys = ['max_parallel_queries', 'min_seconds_between_api_requests']
+        for key in client_kwargs:
+            if key not in valid_keys:
+                raise ValueError(f"async_llm_client_kwargs keys must be one of {valid_keys}")
+        self.llm = AsyncLLMClient(
             model_names=evo_config.llm_models,
             model_selection=self.llm_selection,
             **evo_config.llm_kwargs,
+            **client_kwargs,
             verbose=verbose,
         )
         if evo_config.embedding_model is not None:
@@ -1837,9 +1851,16 @@ class TunaEvolutionRunner:
             self.meta_llm = None
 
         if evo_config.novelty_llm_models is not None:
-            self.novelty_llm = LLMClient(
+            novelty_client_kwargs = evo_config.novelty_async_llm_client_kwargs
+            valid_keys = ['max_parallel_queries', 'min_seconds_between_api_requests']
+            for key in novelty_client_kwargs:
+                if key not in valid_keys:
+                    raise ValueError(f"novelty_async_llm_client_kwargs keys must be one of {valid_keys}")
+            
+            self.novelty_llm = AsyncLLMClient(
                 model_names=evo_config.novelty_llm_models,
                 **evo_config.novelty_llm_kwargs,
+                **novelty_client_kwargs,
                 verbose=verbose,
             )
         else:
@@ -1863,7 +1884,7 @@ class TunaEvolutionRunner:
         )
 
         # Initialize NoveltyJudge for novelty assessment
-        self.novelty_judge = NoveltyJudge(
+        self.novelty_judge = AsyncNoveltyJudge(
             novelty_llm_client=self.novelty_llm,
             language=evo_config.language,
             similarity_threshold=evo_config.code_embed_sim_threshold,
@@ -1950,7 +1971,7 @@ class TunaEvolutionRunner:
         # First, run generation 0 sequentially to populate the database
         if self.completed_generations == 0 and target_gens > 0:
             logger.info("Running generation 0 sequentially to initialize database...")
-            self._run_generation_0()
+            await self._run_generation_0()
             self.completed_generations = 1
             self.next_generation_to_submit = 1
             logger.info(f"Completed generation 0, total: 1/{target_gens}")
@@ -2011,7 +2032,7 @@ class TunaEvolutionRunner:
         logger.info(f"Evolution run ended at {end_time}")
         logger.info("=" * 80)
 
-    def generate_initial_program(self):
+    async def generate_initial_program(self):
         """Generate initial program with LLM, with retries."""
         llm_kwargs = self.llm.get_kwargs()
 
@@ -2020,7 +2041,7 @@ class TunaEvolutionRunner:
         total_costs = 0.0
 
         for attempt in range(self.evo_config.max_patch_attempts):
-            response = self.llm.query(
+            response = await self.llm.query(
                 msg=user_msg,
                 system_msg=sys_msg,
                 llm_kwargs=llm_kwargs,
@@ -2096,7 +2117,7 @@ class TunaEvolutionRunner:
             f"{self.evo_config.max_patch_attempts} attempts."
         )
 
-    def _run_generation_0(self):
+    async def _run_generation_0(self):
         """Setup and run generation 0 to initialize the database."""
         initial_dir = f"{self.results_dir}/{FOLDER_PREFIX}_0_branch_0"
         Path(initial_dir).mkdir(parents=True, exist_ok=True)
@@ -2120,7 +2141,7 @@ class TunaEvolutionRunner:
                 "generating initial program with LLM..."
             )
             initial_code, patch_name, patch_description, api_costs = (
-                self.generate_initial_program()
+                await self.generate_initial_program()
             )
             with open(exec_fname, "w", encoding="utf-8") as f:
                 f.write(initial_code)
@@ -2547,7 +2568,7 @@ class TunaEvolutionRunner:
             e_cost = 0.0
         return code_embedding, e_cost
 
-    def _print_metadata_table(self, meta_data: dict, generation: int):
+    def _print_metadata_table(self, meta_data: dict, generation: int, branch_id: int):
         """Display metadata in a formatted rich table."""
         # Create title with generation and attempt information
         title_parts = ["[bold magenta]Patch Metadata"]
@@ -2555,7 +2576,10 @@ class TunaEvolutionRunner:
         # Add generation if present
         if generation is not None:
             title_parts.append(
-                f" - Gen {generation}/{self.evo_config.num_generations} - Novelty: {meta_data['novelty_attempt']}/{self.evo_config.max_novelty_attempts} - Resample: {meta_data['resample_attempt']}/{self.evo_config.max_patch_resamples} - Patch: {meta_data['patch_attempt']}/{self.evo_config.max_patch_attempts}"
+                f" - Gen {generation}/{self.evo_config.num_generations} Branch {branch_id}/{self.evo_config.num_branches_per_generation}"
+                f" - Novelty: {meta_data['novelty_attempt']}/{self.evo_config.max_novelty_attempts}"
+                f" - Resample: {meta_data['resample_attempt']}/{self.evo_config.max_patch_resamples}"
+                f" - Patch: {meta_data['patch_attempt']}/{self.evo_config.max_patch_attempts}"
             )
 
         # Add attempt information if present
