@@ -1,4 +1,4 @@
-from .llm import LLMClient, extract_between
+from .llm import LLMClient, AsyncLLMClient, extract_between
 from .embedding import EmbeddingClient
 from .models import QueryResult
 from .dynamic_sampling import (
@@ -9,6 +9,7 @@ from .dynamic_sampling import (
 
 __all__ = [
     "LLMClient",
+    "AsyncLLMClient",
     "extract_between",
     "QueryResult",
     "EmbeddingClient",
