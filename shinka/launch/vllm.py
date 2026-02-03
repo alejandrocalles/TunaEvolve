@@ -194,8 +194,9 @@ def main():
         served_model_name=args.model,
         gpu_memory_utilization=args.gpu_memory_utilization,
         port=args.port,
-        log_dir=args.log_dir,
+        log_dir=pathlib.Path(args.log_dir),
     )
+
     with vllm_server:
         logger.info("Press Ctrl+C to stop the vLLM server")
         try:
