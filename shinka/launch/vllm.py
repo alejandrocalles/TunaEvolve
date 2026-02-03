@@ -162,6 +162,10 @@ def kill_process_tree(
 
 
 def main():
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(message)s',
+    )
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--model",
@@ -178,6 +182,11 @@ def main():
         type=float,
         default=0.9
     )
+    parser.add_argument(
+        "--log-dir",
+        type=str,
+        default=None
+    )
     args = parser.parse_args()
 
     vllm_server = VLLMServer(
@@ -185,6 +194,7 @@ def main():
         served_model_name=args.model,
         gpu_memory_utilization=args.gpu_memory_utilization,
         port=args.port,
+        log_dir=args.log_dir,
     )
     with vllm_server:
         logger.info("Press Ctrl+C to stop the vLLM server")
