@@ -72,17 +72,26 @@ class TunaEvolveLauncher:
         period_index = 0
         num_generations_per_period = self.training_config.evotune.num_generations_per_period
         while True:
-            # Evolution
-            with VLLMServer(
-                model_path=self._save_dir(period_index=period_index),
-                model_name=model_id,
-            ):
+            # ======================
+            #   Evolution
+            # ======================
+            vllm_server = VLLMServer(
+                model_path_or_id=self._save_dir(period_index=period_index),
+                served_model_name=model_id,
+                host="0.0.0.0",
+                port=8000,
+                gpu_memory_utilization=0.9,
+                log_dir=pathlib.Path("vllm_logs"),
+            )
+            with vllm_server:
                 await self.evolution_runner.run(num_steps=num_generations_per_period)
 
             if self.evolution_runner.completed_generations >= num_generations:
                 break
 
-            # Training
+            # ======================
+            #   Training
+            # ======================
             dataset = self.database_wrapper.build_dpo_dataset()
             launch_dpo(
                 dataset=dataset,

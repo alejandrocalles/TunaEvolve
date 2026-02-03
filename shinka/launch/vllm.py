@@ -4,35 +4,74 @@ import logging
 import subprocess
 import atexit
 import argparse
+import signal
+import enum
+import pathlib
+from typing import Optional, IO
+
 import psutil
 
 logger = logging.getLogger(__name__)
 
 class VLLMServer:
+
+    class PortStatus(enum.Enum):
+        IN_USE_BY_OTHER_PROCESS = 0
+        IN_USE_BY_THIS_VLLM_PROCESS = 1
+        NOT_IN_USE = 2
+
     def __init__(
         self,
-        model_path: str,
-        model_name: str,
-        gpu_memory_utilization: float = 0.9,
+        model_path_or_id: str,
+        served_model_name: Optional[str],
         host: str = "0.0.0.0",
-        port: int = 8000
+        port: int = 8000,
+        gpu_memory_utilization: float = 0.9,
+        log_dir: Optional[pathlib.Path] = None,
     ):
-        self.model_path = model_path
-        self.model_name = model_name
+        # vLLM
+        self.model_path_or_id = model_path_or_id
+        self.served_model_name = served_model_name or model_path_or_id
         self.gpu_memory_utilization = gpu_memory_utilization
         self.host = host
         self.port = port
-        self.process = None
 
-    def start(self) -> None:
+        # handles
+        self.process: Optional[subprocess.Popen] = None
+        self.log_dir = log_dir
+        self._stdout_file: Optional[IO] = None
+        self._stderr_file: Optional[IO] = None
+
+    def __enter__(self):
+        self.start(timeout=300)
+        return self
+
+    def __exit__(self, exit_type, exit_value, exit_traceback):
+        self.stop(timeout=15)
+
+    def start(self, timeout: int = 300) -> None:
         """Start this server"""
-        if (self._is_port_in_use(verbose=True)):
-            return
 
+        # handle cases where the port is already in use
+        match self._query_port_status():
+            case VLLMServer.PortStatus.IN_USE_BY_THIS_VLLM_PROCESS:
+                logger.warning(
+                    f"attempted to start vLLM server at {self.address}, but port is already in use "
+                    f"by this server."
+                )
+                return None
+            case VLLMServer.PortStatus.IN_USE_BY_OTHER_PROCESS:
+                logger.warning(
+                    f"attempted to start vLLM server at {self.address}, but port is already in use "
+                    f"by another process."
+                )
+                return None
+        
+        # otherwise we can launch the server
         command = [
             sys.executable, "-m", "vllm.entrypoints.openai.api_server",
-            "--model", self.model_path,
-            "--served-model-name", self.model_name,
+            "--model", self.model_path_or_id,
+            "--served-model-name", self.served_model_name,
             "--port", f"{self.port}",
             "--host", self.host,
             "--gpu-memory-utilization", f"{self.gpu_memory_utilization}",
@@ -40,66 +79,87 @@ class VLLMServer:
             "--dtype", "auto"
         ]
 
+        if self.log_dir is not None:
+            # ensure the log directory exists
+            self.log_dir.mkdir(parents=True, exist_ok=True)
+
+            self._stdout_file = open(self.log_dir / "vllm.out", "w", buffering=1)
+            self._stderr_file = open(self.log_dir / "vllm.err", "w", buffering=1)
+
         logger.info(f"Starting vLLM server: '{' '.join(command)}'")
 
-        # TODO consider using ProcessWithLogging from ./local.py, just need to handle termination properly
-        self.process = subprocess.Popen(command)
+        atexit.register(self.stop)
+        self.process = subprocess.Popen(
+            command,
+            stdout=self._stdout_file or subprocess.DEVNULL,
+            stderr=self._stderr_file or subprocess.DEVNULL,
+            text=True,
+        )
 
-        self._wait_for_server_start()
+        logger.info(f"Waiting for vLLM server to start at {self.address}...")
 
-    def stop(self, _subprocess=subprocess) -> None:
-        """Stop this server"""
+        if not self._wait_for_server_to_start(timeout=timeout):
+            logger.error("Timeout waiting for vLLM server to start, exiting...")
+            self.stop(timeout=15)
+            raise TimeoutError(f"vLLM server failed to start in {timeout}s")
+        
+        logger.info(f"vLLM server started successfully at {self.address}")
+
+
+    def stop(self, timeout: Optional[int] = 15) -> None:
+        """Stop this server."""
+        for handle in [self._stdout_file, self._stderr_file]:
+            if handle is not None and not handle.closed:
+                handle.close()
         if self.process is None:
             return
-
-        logger.info(f"Stopping vLLM server at port {self.port}.")
-        self.process.terminate()
-        try:
-            self.process.wait(timeout=15)
-        except _subprocess.TimeoutExpired:
-            self.process.kill()
+        logger.info(f"Stopping vLLM server at {self.address}...")
+        kill_process_tree(pid=self.process.pid, include_parent=True, timeout=timeout)
         self.process = None
 
-    def __enter__(self):
-        atexit.register(self.stop)
-        self.start()
-        return self
-
-    def __exit__(self, exit_type, exit_value, exit_traceback):
-        self.stop()
-
-    def _is_port_in_use(self, verbose: bool = False) -> bool:
-        connections = [
-            connection for connection in psutil.net_connections(kind="inet")
-            if connection.laddr == (self.host, self.port)
-        ]
+    def _query_port_status(self) -> PortStatus:
+        connections = [c for c in psutil.net_connections() if c.laddr == (self.host, self.port)]
         if not connections:
-            return False
+            return VLLMServer.PortStatus.NOT_IN_USE
+        connection_pid = connections[0].pid
+        if self.process is not None and connection_pid == self.process.pid:
+            return VLLMServer.PortStatus.IN_USE_BY_THIS_VLLM_PROCESS
+        return VLLMServer.PortStatus.IN_USE_BY_OTHER_PROCESS
+
+    def _wait_for_server_to_start(self, timeout: int = 300) -> bool:
+        """Wait for server to start using the port.
         
-        if verbose:
-            connection = connections[0]
-            logger.info(f"Port {self.host}:{self.port} is already in use.")
-            if connection.status == psutil.CONN_LISTEN and self.process:
-                logger.info(
-                    f"The port was found in {psutil.CONN_LISTEN} status,"
-                    f"and this class already has an active process, "
-                    f"consider whether this server has already been started."
-                )
-        return True
-
-    def _wait_for_server_start(self, timeout=120) -> bool:
-        """Wait for server to start using the port."""
+        Returns:
+            `True` if the server started successfully, `False` otherwise.
+        """
         start_time = time.time()
-        logger.info(f"Waiting for vLLM server to start on {self.host}:{self.port}")
-
         while time.time() - start_time < timeout:
-            if self._is_port_in_use():
-                logger.info(f"vLLM server is live at {self.host}:{self.port}")
+            if self._query_port_status() == VLLMServer.PortStatus.IN_USE_BY_THIS_VLLM_PROCESS:
                 return True
             time.sleep(1)
-
-        logger.warning("Timeout waiting for vLLM server to start")
         return False
+
+    @property
+    def address(self) -> str:
+        return f"http://{self.host}:{self.port}"
+
+def kill_process_tree(
+    pid: int,
+    include_parent: bool = False,
+    timeout: Optional[int] = None
+) -> None:
+    """Recursively kills all the children of the given pid."""
+    parent = psutil.Process(pid)
+    children = parent.children(recursive=True)
+    for child in children:
+        child.send_signal(signal.SIGTERM)
+    if include_parent:
+        parent.send_signal(signal.SIGTERM)
+    
+    _, alive = psutil.wait_procs(children + ([parent] if parent else []), timeout=timeout)
+    for process in alive:
+        process.send_signal(signal.SIGKILL)
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -120,13 +180,14 @@ def main():
     )
     args = parser.parse_args()
 
-    with VLLMServer(
-        model_path=args.model,
-        model_name=args.model,
+    vllm_server = VLLMServer(
+        model_path_or_id=args.model,
+        served_model_name=args.model,
         gpu_memory_utilization=args.gpu_memory_utilization,
         port=args.port,
-    ):
-        logger.info("Press Ctrl+C to stop the vLLM server.")
+    )
+    with vllm_server:
+        logger.info("Press Ctrl+C to stop the vLLM server")
         try:
             while True:
                 time.sleep(86400)
