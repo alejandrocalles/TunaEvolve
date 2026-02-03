@@ -28,18 +28,19 @@ class DatabaseWrapper:
         See https://huggingface.co/docs/trl/en/dataset_formats#preference for more
         information on this dataset format.
         """
+        programs = self.program_database.get_all_programs()
+
+        generations: Dict[int, List[database.Program]] = {}
+        for program in programs:
+            generations.setdefault(program.generation, []).append(program)
+        
+        logger.info(f"Generating preference dataset, {len(generations)} generation(s) found in database")
+
         def row_generator():
             """Yields rows for the DPO dataset"""
-            programs = self.program_database.get_all_programs()
             # we group the programs by generation because we assume all programs
             # within the same generation have the same prompt
             # thus, we will only pair-up programs from the same generation
-            generations: Dict[int, List[database.Program]] = {}
-            for program in programs:
-                generations.setdefault(program.generation, []).append(program)
-            
-            logger.info(f"Generating preference dataset, {len(generations)} generation(s) found in database")
-
             for gen_id, generation in generations.items():
                 # separate the programs by correctness 
                 correct_programs = [p for p in generation if p.correct]
