@@ -15,7 +15,6 @@ logger = logging.getLogger(__name__)
 def launch_dpo(
         dataset: Union[datasets.Dataset, datasets.IterableDataset],
         model_dir: str,
-        ref_model_dir: str,
         checkpoints_dir: str,
         save_dir: str,
         hyperparameters: DPOHyperparameters,
@@ -73,7 +72,7 @@ def launch_dpo(
 
     trainer = DPOTrainer(
         model=model_dir,
-        ref_model=ref_model_dir,
+        ref_model=None,
         args=training_args,
         train_dataset=dataset,
         processing_class=tokenizer,

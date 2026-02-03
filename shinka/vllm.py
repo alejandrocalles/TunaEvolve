@@ -23,6 +23,10 @@ class VLLMConfig:
     trust_remote_code: bool = False
     log_dir: Optional[pathlib.Path] = None
 
+    def __post_init__(self):
+        if isinstance(self.log_dir, str):
+            self.log_dir = pathlib.Path(self.log_dir)
+
 class VLLMServer:
     class PortStatus(enum.Enum):
         IN_USE_BY_OTHER_PROCESS = 0

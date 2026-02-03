@@ -65,11 +65,6 @@ class TunaEvolveLauncher:
         model = AutoModelForCausalLM.from_pretrained(model_id)
         tokenizer = AutoTokenizer.from_pretrained(model_id)
 
-        reference_model_path = self.base_output_dir.joinpath(f"reference_model")
-        logger.info(f"Saving reference model to {reference_model_path}...")
-        model.save_pretrained(reference_model_path)
-        tokenizer.save_pretrained(reference_model_path)
-
         period_index = 0
         logger.info(f"Saving model for period 0 to {self._save_dir(period_index=period_index)}...")
         model.save_pretrained(self._save_dir(period_index=period_index))
@@ -101,7 +96,6 @@ class TunaEvolveLauncher:
             launch_dpo(
                 dataset=dataset,
                 model_dir=self._save_dir(period_index=period_index),
-                ref_model_dir=str(reference_model_path),
                 checkpoints_dir=self._base_checkpoints_dir(period_index=period_index + 1),
                 save_dir=self._save_dir(period_index=period_index + 1),
                 hyperparameters=self.training_config.hyperparameters,
