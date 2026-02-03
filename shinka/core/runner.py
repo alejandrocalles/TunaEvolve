@@ -2027,8 +2027,6 @@ class TunaEvolutionRunner:
                     for job in completed_jobs:
                         self._process_completed_job(job)
                     
-                    logger.info("Completed jobs were processed: before updating completed generations...")
-
                     # Update completed generations count
                     self._update_completed_generations()
 
@@ -2298,20 +2296,19 @@ class TunaEvolutionRunner:
         have at least one program in the database. This ensures the count
         advances sequentially without gaps.
         """
-        logger.info(f"Starting to complete generations")
         last_gen = self.db.last_iteration
-        logger.info(f"Updating completed generations: last generation in database: {last_gen}")
         if last_gen == -1:
             self.completed_generations = 0
             return
 
         # Check for contiguous generations from 0 up to last_gen
         completed_up_to = 0
-        for i in range(last_gen + 1):
-            num_programs = len(self.db.get_programs_by_generation(i))
-            self.logger.info(f"Gen {i} has {num_programs}/{self.evo_config.num_branches_per_generation} programs in the database")
+        for gen_id in range(last_gen + 1):
+            target = self.db.config.num_islands if gen_id == 0 else self.evo_config.num_branches_per_generation
+            num_programs = len(self.db.get_programs_by_generation(generation=gen_id))
+            self.logger.info(f"Gen {gen_id} has {num_programs}/{target} programs in the database")
             if num_programs == self.evo_config.num_branches_per_generation:
-                completed_up_to = i + 1
+                completed_up_to = gen_id + 1
             else:
                 # Found a gap, so contiguous sequence is broken
                 self.completed_generations = completed_up_to
