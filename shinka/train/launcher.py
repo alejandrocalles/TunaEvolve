@@ -9,7 +9,7 @@ from shinka.core import TunaEvolutionRunner
 from .dpo import launch_dpo
 from .configuration import DPOTrainingConfig
 from .dataset import DatabaseWrapper
-from shinka.launch import VLLMServer
+from shinka.vllm import VLLMServer, VLLMConfig
 
 logger = logging.getLogger(__name__)
 
@@ -18,10 +18,14 @@ class TunaEvolveLauncher:
         self,
         evolution_runner: TunaEvolutionRunner,
         training_config: DPOTrainingConfig,
+        vllm_config: VLLMConfig,
         verbose: bool = False,
     ):
         self.evolution_runner = evolution_runner
         self.training_config = training_config
+        self.vllm_config = vllm_config
+        self.verbose = verbose
+
         self.database_wrapper = DatabaseWrapper(evolution_runner.db)
         self.base_output_dir = pathlib.Path(self.training_config.base_output_dir)
 
@@ -65,23 +69,23 @@ class TunaEvolveLauncher:
         model.save_pretrained(reference_model_path)
         tokenizer.save_pretrained(reference_model_path)
 
-        logger.info(f"Saving model for period 0 to {self._save_dir(period_index=0)}...")
-        model.save_pretrained(reference_model_path)
-        tokenizer.save_pretrained(reference_model_path)
-
         period_index = 0
+        logger.info(f"Saving model for period 0 to {self._save_dir(period_index=period_index)}...")
+        model.save_pretrained(self._save_dir(period_index=period_index))
+        tokenizer.save_pretrained(self._save_dir(period_index=period_index))
+
         num_generations_per_period = self.training_config.evotune.num_generations_per_period
+
         while True:
-            # ======================
-            #   Evolution
-            # ======================
+            # ==================================================================
+            #       Evolution
+            # ==================================================================
             vllm_server = VLLMServer(
                 model_path_or_id=self._save_dir(period_index=period_index),
                 served_model_name=model_id,
                 host="0.0.0.0",
                 port=8000,
-                gpu_memory_utilization=0.9,
-                log_dir=pathlib.Path("vllm_logs"),
+                config=self.vllm_config,
             )
             with vllm_server:
                 await self.evolution_runner.run(num_steps=num_generations_per_period)
@@ -89,9 +93,9 @@ class TunaEvolveLauncher:
             if self.evolution_runner.completed_generations >= num_generations:
                 break
 
-            # ======================
-            #   Training
-            # ======================
+            # ==================================================================
+            #       Training
+            # ==================================================================
             dataset = self.database_wrapper.build_dpo_dataset()
             launch_dpo(
                 dataset=dataset,

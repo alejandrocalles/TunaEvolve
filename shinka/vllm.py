@@ -7,14 +7,23 @@ import argparse
 import signal
 import enum
 import pathlib
-from typing import Optional, IO
+import dataclasses
+from typing import Optional, IO, Literal
 
 import psutil
 
 logger = logging.getLogger(__name__)
 
-class VLLMServer:
+@dataclasses.dataclass
+class VLLMConfig:
+    gpu_memory_utilization: float = 0.9
+    tensor_parallel_size: int = 1
+    pipeline_parallel_size: int = 1
+    dtype: Literal['auto', 'bfloat16', 'float', 'float16', 'float32', 'half'] = "auto"
+    trust_remote_code: bool = False
+    log_dir: Optional[pathlib.Path] = None
 
+class VLLMServer:
     class PortStatus(enum.Enum):
         IN_USE_BY_OTHER_PROCESS = 0
         IN_USE_BY_THIS_VLLM_PROCESS = 1
@@ -24,21 +33,19 @@ class VLLMServer:
         self,
         model_path_or_id: str,
         served_model_name: Optional[str],
+        config: VLLMConfig,
         host: str = "0.0.0.0",
         port: int = 8000,
-        gpu_memory_utilization: float = 0.9,
-        log_dir: Optional[pathlib.Path] = None,
     ):
         # vLLM
         self.model_path_or_id = model_path_or_id
         self.served_model_name = served_model_name or model_path_or_id
-        self.gpu_memory_utilization = gpu_memory_utilization
+        self.config = config
         self.host = host
         self.port = port
 
         # handles
         self.process: Optional[subprocess.Popen] = None
-        self.log_dir = log_dir
         self._stdout_file: Optional[IO] = None
         self._stderr_file: Optional[IO] = None
 
@@ -74,17 +81,19 @@ class VLLMServer:
             "--served-model-name", self.served_model_name,
             "--port", f"{self.port}",
             "--host", self.host,
-            "--gpu-memory-utilization", f"{self.gpu_memory_utilization}",
-            "--trust-remote-code",
-            "--dtype", "auto"
+            "--gpu-memory-utilization", f"{self.config.gpu_memory_utilization}",
+            "--tensor-parallel-size", f"{self.config.tensor_parallel_size}",
+            "--pipeline-parallel-size", f"{self.config.pipeline_parallel_size}",
+            "--trust-remote-code" if self.config.trust_remote_code else "--no-trust-remote-code",
+            "--dtype", self.config.dtype,
         ]
 
-        if self.log_dir is not None:
+        if self.config.log_dir is not None:
             # ensure the log directory exists
-            self.log_dir.mkdir(parents=True, exist_ok=True)
+            self.config.log_dir.mkdir(parents=True, exist_ok=True)
 
-            self._stdout_file = open(self.log_dir / "vllm.out", "w", buffering=1)
-            self._stderr_file = open(self.log_dir / "vllm.err", "w", buffering=1)
+            self._stdout_file = open(self.config.log_dir / "vllm.out", "w", buffering=1)
+            self._stderr_file = open(self.config.log_dir / "vllm.err", "w", buffering=1)
 
         logger.info(f"Starting vLLM server: '{' '.join(command)}'")
 
@@ -189,12 +198,16 @@ def main():
     )
     args = parser.parse_args()
 
+    config = VLLMConfig(
+        gpu_memory_utilization=args.gpu_memory_utilization,
+        log_dir=pathlib.Path(args.log_dir),
+    )
+
     vllm_server = VLLMServer(
         model_path_or_id=args.model,
         served_model_name=args.model,
-        gpu_memory_utilization=args.gpu_memory_utilization,
         port=args.port,
-        log_dir=pathlib.Path(args.log_dir),
+        config=config,
     )
 
     with vllm_server:

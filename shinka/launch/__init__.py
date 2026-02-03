@@ -1,7 +1,6 @@
 from .scheduler import JobScheduler, JobConfig
 from .scheduler import LocalJobConfig, SlurmDockerJobConfig, SlurmCondaJobConfig
 from .local import ProcessWithLogging
-from .vllm import VLLMServer
 
 __all__ = [
     "JobScheduler",
@@ -10,5 +9,4 @@ __all__ = [
     "SlurmDockerJobConfig",
     "SlurmCondaJobConfig",
     "ProcessWithLogging",
-    "VLLMServer",
 ]

@@ -8,7 +8,7 @@ import asyncio
 from shinka.train import TunaEvolveLauncher
 
 
-@hydra.main(config_path="./configs", config_name="config", version_base=None)
+@hydra.main(config_path="./configs", config_name="tuna_config", version_base=None)
 def main(cfg: DictConfig):
     env_path = Path.cwd() / ".env"
     if env_path.exists():
@@ -21,6 +21,7 @@ def main(cfg: DictConfig):
     db_cfg = hydra.utils.instantiate(cfg.db_config)
     evo_cfg = hydra.utils.instantiate(cfg.evo_config)
     training_cfg = hydra.utils.instantiate(cfg.training_config)
+    vllm_cfg = hydra.utils.instantiate(cfg.vllm_config)
 
     evo_runner = TunaEvolutionRunner(
         evo_config=evo_cfg,
@@ -32,6 +33,7 @@ def main(cfg: DictConfig):
     launcher = TunaEvolveLauncher(
         evolution_runner=evo_runner,
         training_config=training_cfg,
+        vllm_config=vllm_cfg,
         verbose=cfg.verbose,
     )
 
