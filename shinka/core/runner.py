@@ -2026,6 +2026,8 @@ class TunaEvolutionRunner:
                 if completed_jobs:
                     for job in completed_jobs:
                         self._process_completed_job(job)
+                    
+                    logger.info("Completed jobs were processed: before updating completed generations...")
 
                     # Update completed generations count
                     self._update_completed_generations()
@@ -2296,8 +2298,9 @@ class TunaEvolutionRunner:
         have at least one program in the database. This ensures the count
         advances sequentially without gaps.
         """
+        logger.info(f"Starting to complete generations")
         last_gen = self.db.last_iteration
-        self.logger.info(f"Updating completed generations: last generation in database: {last_gen}")
+        logger.info(f"Updating completed generations: last generation in database: {last_gen}")
         if last_gen == -1:
             self.completed_generations = 0
             return
