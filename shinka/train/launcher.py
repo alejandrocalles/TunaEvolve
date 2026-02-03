@@ -4,7 +4,7 @@ import math
 from typing import Optional
 
 import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModelForCausalLM, AutoProcessor
 
 from shinka.core import TunaEvolutionRunner
 from .dpo import launch_dpo
@@ -63,12 +63,12 @@ class TunaEvolveLauncher:
 
         logger.info(f"Loading model {model_id}...")
         model = AutoModelForCausalLM.from_pretrained(model_id)
-        tokenizer = AutoTokenizer.from_pretrained(model_id)
+        processor = AutoProcessor.from_pretrained(model_id)
 
         period_index = 0
         logger.info(f"Saving model for period 0 to {self._save_dir(period_index=period_index)}...")
         model.save_pretrained(self._save_dir(period_index=period_index))
-        tokenizer.save_pretrained(self._save_dir(period_index=period_index))
+        processor.save_pretrained(self._save_dir(period_index=period_index))
 
         num_generations_per_period = self.training_config.evotune.num_generations_per_period
 

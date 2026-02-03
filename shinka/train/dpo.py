@@ -1,8 +1,7 @@
-import pathlib
 import logging
-from typing import Union, Dict
+from typing import Union
 
-import transformers
+from transformers import AutoProcessor
 import datasets
 from trl.trainer.dpo_config import DPOConfig
 from trl.trainer.dpo_trainer import DPOTrainer
@@ -37,10 +36,10 @@ def launch_dpo(
     else:
         logger.info("DPO training launched")
 
-    tokenizer = transformers.AutoTokenizer.from_pretrained(model_dir)
+    processor = AutoProcessor.from_pretrained(model_dir)
 
-    if tokenizer.pad_token is None:
-        # TODO: investigate potential fix, e.g. `tokenizer.pad_token = tokenizer.eos_token`
+    if processor.pad_token is None:
+        # TODO: investigate potential fix, e.g. `processor.pad_token = processor.eos_token`
         logger.error("DPO training failed: DPO requires a pad_token.")
         return None
 
@@ -75,7 +74,7 @@ def launch_dpo(
         ref_model=None,
         args=training_args,
         train_dataset=dataset,
-        processing_class=tokenizer,
+        processing_class=processor,
         peft_config=lora_config.to_peft_config(),
     )
 
@@ -85,6 +84,6 @@ def launch_dpo(
     logger.info(f"Saving model to {save_dir}...")
     
     trainer.save_model(save_dir)
-    tokenizer.save_pretrained(save_dir)
+    processor.save_pretrained(save_dir)
 
     logger.info("Training complete")
