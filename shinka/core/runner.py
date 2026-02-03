@@ -2297,6 +2297,7 @@ class TunaEvolutionRunner:
         advances sequentially without gaps.
         """
         last_gen = self.db.last_iteration
+        self.logger.info(f"Updating completed generations: last generation in database: {last_gen}")
         if last_gen == -1:
             self.completed_generations = 0
             return
@@ -2304,7 +2305,9 @@ class TunaEvolutionRunner:
         # Check for contiguous generations from 0 up to last_gen
         completed_up_to = 0
         for i in range(last_gen + 1):
-            if len(self.db.get_programs_by_generation(i)) == self.evo_config.num_branches_per_generation:
+            num_programs = len(self.db.get_programs_by_generation(i))
+            self.logger.info(f"Gen {i} has {num_programs}/{self.evo_config.num_branches_per_generation} programs in the database")
+            if num_programs == self.evo_config.num_branches_per_generation:
                 completed_up_to = i + 1
             else:
                 # Found a gap, so contiguous sequence is broken
