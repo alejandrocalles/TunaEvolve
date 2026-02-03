@@ -1,6 +1,7 @@
 import pathlib
 import logging
 import math
+from typing import Optional
 
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -37,28 +38,28 @@ class TunaEvolveLauncher:
 
         if num_generations == 0:
             logger.warning(f"num_generations was 0, exiting...")
-            return None
+            return
 
-        if self.training_config.evotune.training_enabled:
+        if not self.training_config.evotune.training_enabled:
             logger.warning(f"Training disabled, running evolution runner for {num_generations} generations")
-            await self.evolution_runner.run(num_steps=num_generations)
-            return None
-        
-        
-        model_id = self.training_config.model_id
+            if (model_id := self._get_model_id()) is None:
+                return
 
-        valid = any([
-            model_id in [model_name, model_name.split("local-")[-1]]
-            for model_name in self.evolution_runner.llm.model_names
-        ])
-        if not valid:
-            # This could be a warning, and we could continue,
-            # but it's better to crash as soon as possible
-            logger.error(
-                f"The trained model id was {model_id}, but it was not found "
-                f"in the list of model names"
+            vllm_server = VLLMServer(
+                model_path_or_id=model_id,
+                served_model_name=model_id,
+                host="0.0.0.0",
+                port=8000,
+                config=self.vllm_config,
             )
-            return None
+            with vllm_server:
+                await self.evolution_runner.run(num_steps=num_generations)
+
+            return
+        
+        
+        if (model_id := self._get_model_id()) is None:
+            return
 
         logger.info(f"Loading model {model_id}...")
         model = AutoModelForCausalLM.from_pretrained(model_id)
@@ -131,3 +132,19 @@ class TunaEvolveLauncher:
         if self.evolution_runner.evo_config.num_generations <= 0:
             return 0
         return (self.evolution_runner.evo_config.num_generations - 1) // self.training_config.evotune.num_generations_per_period
+    
+    def _get_model_id(self) -> Optional[str]:
+        model_id = self.training_config.model_id
+        valid = any([
+            model_id in [model_name, model_name.split("local-")[-1]]
+            for model_name in self.evolution_runner.llm.model_names
+        ])
+        if not valid:
+            # This could be a warning, and we could continue,
+            # but it's better to crash as soon as possible
+            logger.error(
+                f"The trained model id was {model_id}, but it was not found "
+                f"in the list of model names"
+            )
+            return None
+        return model_id
