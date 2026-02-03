@@ -4,9 +4,10 @@ defaults:
   - evolution@_global_: small_budget
   - task@_global_: linear_codes
   - cluster@_global_: local
+  - training@_global_: dpo
   - variant@_global_: tuna_linear_codes_example
 
-verbose: false
+verbose: true
 results_dir: results
 run_name: ${now:%Y.%m.%d}${now:%H%M%S}
 

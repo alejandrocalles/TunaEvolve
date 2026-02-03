@@ -1,0 +1,120 @@
+import pathlib
+import logging
+import math
+
+import torch
+from transformers import AutoModelForCausalLM, AutoTokenizer
+
+from shinka.core import TunaEvolutionRunner
+from .dpo import launch_dpo
+from .configuration import DPOTrainingConfig
+from .dataset import DatabaseWrapper
+from shinka.launch import VLLMServer
+
+logger = logging.getLogger(__name__)
+
+class TunaEvolveLauncher:
+    def __init__(
+        self,
+        evolution_runner: TunaEvolutionRunner,
+        training_config: DPOTrainingConfig,
+        verbose: bool = False,
+    ):
+        self.evolution_runner = evolution_runner
+        self.training_config = training_config
+        self.database_wrapper = DatabaseWrapper(evolution_runner.db)
+        self.base_output_dir = pathlib.Path(self.training_config.base_output_dir)
+
+    async def launch(self) -> None:
+        """Start this launcher."""
+
+        await self.evolution_runner.start()
+        num_generations = self.evolution_runner.evo_config.num_generations
+
+        if num_generations == 0:
+            logger.warning(f"num_generations was 0, exiting...")
+            return None
+
+        if self.training_config.evotune.training_enabled:
+            logger.warning(f"Training disabled, running evolution runner for {num_generations} generations")
+            await self.evolution_runner.run(num_steps=num_generations)
+            return None
+        
+        
+        model_id = self.training_config.model_id
+
+        valid = any([
+            model_id in [model_name, model_name.split("local-")[-1]]
+            for model_name in self.evolution_runner.llm.model_names
+        ])
+        if not valid:
+            # This could be a warning, and we could continue,
+            # but it's better to crash as soon as possible
+            logger.error(
+                f"The trained model id was {model_id}, but it was not found "
+                f"in the list of model names"
+            )
+            return None
+
+        logger.info(f"Loading model {model_id}...")
+        model = AutoModelForCausalLM.from_pretrained(model_id)
+        tokenizer = AutoTokenizer.from_pretrained(model_id)
+
+        reference_model_path = self.base_output_dir.joinpath(f"reference_model")
+        logger.info(f"Saving reference model to {reference_model_path}...")
+        model.save_pretrained(reference_model_path)
+        tokenizer.save_pretrained(reference_model_path)
+
+        logger.info(f"Saving model for period 0 to {self._save_dir(period_index=0)}...")
+        model.save_pretrained(reference_model_path)
+        tokenizer.save_pretrained(reference_model_path)
+
+        period_index = 0
+        num_generations_per_period = self.training_config.evotune.num_generations_per_period
+        while True:
+            # Evolution
+            with VLLMServer(
+                model_path=self._save_dir(period_index=period_index),
+                model_name=model_id,
+            ):
+                await self.evolution_runner.run(num_steps=num_generations_per_period)
+
+            if self.evolution_runner.completed_generations >= num_generations:
+                break
+
+            # Training
+            dataset = self.database_wrapper.build_dpo_dataset()
+            launch_dpo(
+                dataset=dataset,
+                model_dir=self._save_dir(period_index=period_index),
+                ref_model_dir=str(reference_model_path),
+                checkpoints_dir=self._base_checkpoints_dir(period_index=period_index + 1),
+                save_dir=self._save_dir(period_index=period_index + 1),
+                hyperparameters=self.training_config.hyperparameters,
+                hardware_config=self.training_config.hardware,
+                lora_config=self.training_config.lora,
+                logging_steps=self.training_config.logging_steps,
+            )
+            torch.cuda.empty_cache()
+            period_index += 1
+    
+    def _base_checkpoints_path(self, period_index: int) -> pathlib.Path:
+        num_digits = math.ceil(math.log(self._num_training_periods, 10))
+        return self.base_output_dir.joinpath(f"checkpoints_for_period_{period_index:0{num_digits}d}")
+    
+    def _base_checkpoints_dir(self, period_index: int) -> str:
+        return str(self._base_checkpoints_path(period_index))
+    
+    def _save_path(self, period_index: int) -> pathlib.Path:
+        """The path where the final model of a training period should be saved."""
+        return self._base_checkpoints_path(period_index).joinpath("latest")
+    
+    def _save_dir(self, period_index: int) -> str:
+        """The directory where the final model of a training period should be saved."""
+        return str(self._save_path(period_index))
+
+    @property
+    def _num_training_periods(self):
+        if self.evolution_runner.evo_config.num_generations <= 0:
+            return 0
+        return (self.evolution_runner.evo_config.num_generations - 1) // self.training_config.evotune.num_generations_per_period

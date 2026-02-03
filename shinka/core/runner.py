@@ -115,6 +115,12 @@ class VerboseAdapter(logging.LoggerAdapter):
         if self.extra is None or self.extra.get('verbose'):
             super().log(level, msg, *args, **kwargs)
 
+class ReadableSemaphore(asyncio.Semaphore):
+    """A semaphore that exposes its number of waiters."""
+    @property
+    def waiting_count(self) -> int:
+        return len(self._waiters) if self._waiters else 0
+
 class PatchJob:
     """
     Holds the data related to an LLM patch generation job,
@@ -209,9 +215,9 @@ class PatchJob:
             self.meta_patch_data["meta_scratch_pad"] = meta_scratch
 
     async def run(self) -> None:
-        """
-        Run this patch job.
-        Iterate over novelty attempts to generate a patch and prepare
+        """Run this patch job.
+
+        Iterate over novelty attempts to generate a patch
         and submit to the runner's job queue.
         """
         if self.current_gen == 0:
@@ -221,13 +227,15 @@ class PatchJob:
 
         assert self.parent_program is not None and self.patch_type is not None, "expected this job to have a parent program and a patch type"
 
-        # Loop over novelty attempts
-        for novelty_attempt_index in range(self.runner.evo_config.max_novelty_attempts):
-            # Generate patch
-            await self._generate_patch(novelty_attempt_index=novelty_attempt_index)
-            if await self._accept_patch_novelty():
-                # If the patch is accepted, break out of novelty attempts
-                break
+        # should acquire the runner's semaphore before running
+        async with self.runner.semaphore:
+            # Loop over novelty attempts
+            for novelty_attempt_index in range(self.runner.evo_config.max_novelty_attempts):
+                # Generate patch
+                await self._generate_patch(novelty_attempt_index=novelty_attempt_index)
+                if await self._accept_patch_novelty():
+                    # If the patch is accepted, break out of novelty attempts
+                    break
 
         # Add novelty check information to meta_patch_data if any checks were performed
         if self.num_novelty_checks > 0:
@@ -390,7 +398,7 @@ class PatchJob:
 
             self.runner.logger.info(
                 f"  PATCH ATTEMPT {patch_attempt_index + 1}/{self.max_patch_attempts} FAILURE "
-                f"for generation {self.current_gen} branch {self.branch_id}. "
+                f"Gen {self.current_gen} Branch {self.branch_id} - "
                 f"Error: '{error_str}', "
                 f"Patches Applied: {num_applied_attempt}."
             )
@@ -493,7 +501,7 @@ class PatchJob:
         self.runner.running_jobs.append(running_job)
 
         self.runner.logger.info(
-            f"Submitted job for generation {self.current_gen} and branch {self.branch_id}, "
+            f"Submitted job for Gen {self.current_gen} Branch {self.branch_id}, "
             f"queue size: {len(self.runner.running_jobs)}"
         )
 
@@ -1914,6 +1922,7 @@ class TunaEvolutionRunner:
         self.running_jobs: List[RunningJob] = []
         self.best_program_id: Optional[str] = None
         self.next_generation_to_submit = 0
+        self.semaphore = ReadableSemaphore(self.evo_config.max_parallel_jobs)
 
         if resuming_run:
             self.completed_generations = self.db.last_iteration + 1
@@ -1959,8 +1968,15 @@ class TunaEvolutionRunner:
 
         logger.info(f"Experiment configuration saved to {config_path}")
 
-    async def run(self):
-        """Run evolution with parallel job queue."""
+    async def start(self) -> None:
+        """Starts this runner.
+        
+        Evaluates the initial program and adds it to the database.
+        Should be called only once and before any calls to `run`.
+        Important: the call to this method should return before
+        any call to `run` is made.
+        """
+
         max_jobs = self.evo_config.max_parallel_jobs
         target_gens = self.evo_config.num_generations
         logger.info(
@@ -1968,7 +1984,7 @@ class TunaEvolutionRunner:
             f"target: {target_gens} generations"
         )
 
-        # First, run generation 0 sequentially to populate the database
+        # Run generation 0 sequentially to populate the database
         if self.completed_generations == 0 and target_gens > 0:
             logger.info("Running generation 0 sequentially to initialize database...")
             await self._run_generation_0()
@@ -1976,10 +1992,29 @@ class TunaEvolutionRunner:
             self.next_generation_to_submit = 1
             logger.info(f"Completed generation 0, total: 1/{target_gens}")
 
-        # Now start parallel execution for remaining generations
-        if self.completed_generations < target_gens:
-            logger.info("Starting parallel execution for remaining generations...")
+    async def run(self, num_steps: int) -> None:
+        """Runs evolution for a given number of generations.
 
+        Advances the evolution algorithm by a given number of generations.
+        Any calls to this method should occur after the call to `start` has
+        returned.
+
+        Args:
+            num_steps:
+                The number of additional generations that should be produced.
+        """
+        max_jobs = self.evo_config.max_parallel_jobs
+        target_gens = min(
+            self.evo_config.num_generations,
+            self.completed_generations + num_steps
+        )
+
+        logger.info(
+            f"Running evolution for {num_steps} steps, "
+            f"from Gen {self.completed_generations} to Gen {target_gens}"
+        )
+
+        async with asyncio.TaskGroup() as tg:
             # Main loop: monitor jobs and submit new ones
             while (
                 self.completed_generations < target_gens or len(self.running_jobs) > 0
@@ -2003,34 +2038,38 @@ class TunaEvolutionRunner:
 
                 # Check if we've completed all generations
                 if self.completed_generations >= target_gens:
-                    logger.info("All generations completed, exiting...")
                     break
 
                 # Submit new jobs to fill the queue (only if we have capacity)
                 if (
-                    len(self.running_jobs) < max_jobs
+                    len(self.running_jobs) + self.semaphore.waiting_count < max_jobs
                     and self.next_generation_to_submit < target_gens
                 ):
-                    await self._submit_new_generation()
+                    tg.create_task(self._submit_new_generation())
 
                 # Wait a bit before checking again
                 await asyncio.sleep(2)
 
             # All jobs are now handled by the main loop above
 
-        # Perform final meta summary for any remaining unprocessed programs
-        best_program = self.db.get_best_program()
-        self.meta_summarizer.perform_final_summary(str(self.results_dir), best_program)
+        logger.info("All pending generations completed, exiting evolution runner...")
 
-        # Save final meta memory state
-        self._save_meta_memory()
+        if self.completed_generations == self.evo_config.num_generations:
+            # Perform final meta summary for any remaining unprocessed programs
+            best_program = self.db.get_best_program()
+            self.meta_summarizer.perform_final_summary(str(self.results_dir), best_program)
 
-        self.db.print_summary()
-        logger.info(f"Evolution completed! {self.completed_generations} generations")
-        logger.info("=" * 80)
-        end_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        logger.info(f"Evolution run ended at {end_time}")
-        logger.info("=" * 80)
+            # Save final meta memory state
+            self._save_meta_memory()
+
+            self.db.print_summary()
+            logger.info(f"Evolution completed! {self.completed_generations} generations")
+            logger.info("=" * 80)
+            end_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            logger.info(f"Evolution run ended at {end_time}")
+            logger.info("=" * 80)
+
+        return None
 
     async def generate_initial_program(self):
         """Generate initial program with LLM, with retries."""
@@ -2265,7 +2304,7 @@ class TunaEvolutionRunner:
         # Check for contiguous generations from 0 up to last_gen
         completed_up_to = 0
         for i in range(last_gen + 1):
-            if self.db.get_programs_by_generation(i):
+            if len(self.db.get_programs_by_generation(i)) == self.evo_config.num_branches_per_generation:
                 completed_up_to = i + 1
             else:
                 # Found a gap, so contiguous sequence is broken

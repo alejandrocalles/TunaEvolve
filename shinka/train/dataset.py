@@ -1,0 +1,169 @@
+"""Datasets for RL Training of LLMs
+
+This module should be used with a database
+produced by `shinka.core.TunaEvolutionRunner`
+and is not suitable for use with databases produced by
+`shinka.core.EvolutionRunner`.
+"""
+from shinka import database
+import logging
+from typing import List, Dict, Tuple, Optional, Union
+import math
+import random
+import itertools
+import datasets
+
+logger = logging.getLogger(__name__)
+
+class DatabaseWrapper:
+    """A wrapper around a database to produce datasets for fine-tuning"""
+
+    def __init__(self, program_database: database.ProgramDatabase):
+        self.program_database = program_database
+
+
+    def build_dpo_dataset(self) -> Union[datasets.Dataset, datasets.IterableDataset]:
+        """Builds a preference dataset from this database for DPO training.
+
+        See https://huggingface.co/docs/trl/en/dataset_formats#preference for more
+        information on this dataset format.
+        """
+        def row_generator():
+            """Yields rows for the DPO dataset"""
+            programs = self.program_database.get_all_programs()
+            # we group the programs by generation because we assume all programs
+            # within the same generation have the same prompt
+            # thus, we will only pair-up programs from the same generation
+            generations: Dict[int, List[database.Program]] = {}
+            for program in programs:
+                generations.setdefault(program.generation, []).append(program)
+            
+            logger.info(f"Generating preference dataset, {len(generations)} generation(s) found in database")
+
+            for gen_id, generation in generations.items():
+                # separate the programs by correctness 
+                correct_programs = [p for p in generation if p.correct]
+                incorrect_programs = [p for p in generation if not p.correct]
+
+                logger.info(
+                    f"Gen {gen_id} has {len(correct_programs)} correct program(s) "
+                    f"and {len(incorrect_programs)} incorrect program(s)"
+                )
+
+                # cluster the correct programs by score
+                clusters: dict[float, List[database.Program]] = {}
+                for program in correct_programs:
+                    clusters.setdefault(program.combined_score, []).append(program)
+                
+                unique_scores = sorted(clusters.keys())
+                if len(unique_scores) < 2:
+                    logger.warning(
+                        f"Skipping Gen {gen_id} for DPO dataset: "
+                        f"found {len(unique_scores)} unique scores among {len(generation)} programs"
+                    )
+                    continue # we need at least two unique scores to form pairs
+                
+                logger.info(
+                    f"Gen {gen_id} has {len(unique_scores)} unique scores, "
+                    "starting creation of preference pairs"
+                )
+
+                def preference_pairs_generator():
+                    """Yield preference pairs of programs as a tuple (rejected, chosen)"""
+                    # separate low scores from high scores
+                    mid = math.ceil(len(unique_scores) / 2)
+                    low_scores, high_scores = unique_scores[:mid], unique_scores[mid:]
+                    for low_score, high_score in zip(low_scores, high_scores):
+                        rejected_program = random.choice(clusters[low_score])
+                        chosen_program = random.choice(clusters[high_score])
+                        # preference pair of (low_score, high_score)
+                        yield rejected_program, chosen_program
+                    if not correct_programs:
+                        return
+                    for incorrect_program, correct_program in zip(incorrect_programs, itertools.cycle(correct_programs)):
+                        # preference pair of (incorrect, correct)
+                        yield incorrect_program, correct_program
+                
+                for rejected_program, chosen_program in preference_pairs_generator():
+                    if (result_rejected := extract_prompt_and_response(rejected_program)) is None:
+                        continue
+                    rejected_prompt, rejected_response = result_rejected
+
+                    if (result_chosen := extract_prompt_and_response(chosen_program)) is None:
+                        continue
+                    chosen_prompt, chosen_response = result_chosen
+                    assert chosen_prompt == rejected_prompt
+
+                    yield dict(
+                        generation=gen_id,
+                        prompt=chosen_prompt,
+                        chosen=chosen_response,
+                        rejected=rejected_response,
+                        chosen_branch_id=chosen_program.branch_id,
+                        rejected_branch_id=rejected_program.branch_id,
+                    )
+        dataset = datasets.Dataset.from_generator(row_generator)
+        if not isinstance(dataset, (datasets.Dataset, datasets.IterableDataset)):
+            raise TypeError("DPO dataset must be an instance of datasets.Dataset or datasets.IterableDataset")
+        return dataset
+
+def extract_prompt_and_response(program: database.Program) -> Optional[Tuple[dict, dict]]:
+    """
+    Extracts the original prompt and the last response from the conversation that
+    generated a program.
+    
+    Args:
+        program:
+            The program from which to extract the prompt and response.
+            This information is fetched from the program's `metadata` field,
+            which should contain the `llm_result` key. Setting this field
+            is the responsibility of the runner.
+    
+    Returns:
+        If the information is succesfully fetched, returns a tuple (prompt, response),
+        where prompt is a dict with the first message in the conversation and response
+        is a dict with the last message in the conversation.
+        If the last message does not have the correct role or if the
+        `llm_result` field is not present, returns None.
+    
+    Raises:
+        KeyError: The relevant messages did not have the correct keys.
+        ValueError: The first message does not have the correct role.
+    """
+    llm_result = program.metadata['llm_result']
+    if llm_result is None:
+        logger.warning(
+            f"LLM result is None for Gen {program.generation} Branch {program.branch_id}"
+            f" - could not extract message history"
+        )
+        return None
+
+    assert 'new_msg_history' in llm_result
+
+    prompt_msg = llm_result['new_msg_history'][0]
+    response_msg = llm_result['new_msg_history'][-1]
+
+    # the following checks are important for debugging -
+    # might want to change these checks if the format of message
+    # histories changes
+    if 'role' not in prompt_msg:
+        raise KeyError("expected messages in this program's message history to have a role, found none")
+    if 'content' not in prompt_msg:
+        raise KeyError("expected messages in this program's message history to have content, found none")
+    if prompt_msg['role'] != "user":
+        raise ValueError(
+            f"expected the first message of this program's message history to have user role, found {prompt_msg['role']}"
+        )
+    if 'role' not in response_msg:
+        raise KeyError("expected messages in this program's message history to have a role, found none")
+    if 'content' not in response_msg:
+        raise KeyError("expected messages in this program's message history to have content, found none")
+    if response_msg['role'] != "assistant":
+        logger.warning(
+            f"Expected last message of this program's message history to have "
+            f"assistant role, found {response_msg['role']} (Gen {program.generation}) Branch {program.branch_id}"
+            f" - could not extract response"
+        )
+        return None
+
+    return prompt_msg, response_msg

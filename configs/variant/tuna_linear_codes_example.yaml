@@ -3,6 +3,7 @@ defaults:
   - override /evolution@_global_: tuna_small_budget
   - override /task@_global_: linear_codes
   - override /cluster@_global_: local
+  - override /training@_global_: dpo
   - _self_
 
 variant_suffix: "_example"
