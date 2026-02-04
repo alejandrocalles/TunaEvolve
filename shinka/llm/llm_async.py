@@ -25,7 +25,6 @@ class AsyncClientConfig:
             to run in parallel.
             Its length should match the number of model names provided,
             and the limit will apply on a per-model basis.
-
         min_seconds_between_api_requests:
             The rate at which queries should be dispatched.
             Its length should match the number of model names provided. 

@@ -2301,7 +2301,7 @@ class TunaEvolutionRunner:
             target = self.db.config.num_islands if gen_id == 0 else self.evo_config.num_branches_per_generation
             num_programs = len(self.db.get_programs_by_generation(generation=gen_id))
             self.logger.info(f"Gen {gen_id} has {num_programs}/{target} programs in the database")
-            if num_programs == self.evo_config.num_branches_per_generation:
+            if num_programs == target:
                 completed_up_to = gen_id + 1
             else:
                 # Found a gap, so contiguous sequence is broken
