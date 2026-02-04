@@ -106,12 +106,12 @@ class DatabaseWrapper:
         dataset = datasets.Dataset.from_generator(
             row_generator,
             features=datasets.Features({
-                "generation": datasets.Value('int'),
-                "prompt": datasets.List({"role": datasets.Value('str'), "content": datasets.Value('str')}),
-                "chosen": datasets.List({"role": datasets.Value('str'), "content": datasets.Value('str')}),
-                "rejected": datasets.List({"role": datasets.Value('str'), "content": datasets.Value('str')}),
-                "chosen_branch_id": datasets.Value('int32'),
-                "rejected_branch_id": datasets.Value('int32'),
+                "generation": datasets.Value('int64'),
+                "prompt": datasets.List({"role": datasets.Value('string'), "content": datasets.Value('string')}),
+                "chosen": datasets.List({"role": datasets.Value('string'), "content": datasets.Value('string')}),
+                "rejected": datasets.List({"role": datasets.Value('string'), "content": datasets.Value('string')}),
+                "chosen_branch_id": datasets.Value('int64'),
+                "rejected_branch_id": datasets.Value('int64'),
             })
         )
         if not isinstance(dataset, (datasets.Dataset, datasets.IterableDataset)):

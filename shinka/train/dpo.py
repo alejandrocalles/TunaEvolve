@@ -32,6 +32,8 @@ def launch_dpo(
     """
 
     if isinstance(dataset, datasets.Dataset):
+        if len(dataset) == 0:
+            return
         logger.info(f"DPO training launched with {len(dataset)} preference pairs")
     else:
         logger.info("DPO training launched")
