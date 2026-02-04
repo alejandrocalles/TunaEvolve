@@ -16,7 +16,8 @@ evo_config:
   llm_dynamic_selection: null
   embedding_model: "gemini-embedding-001"
   results_dir: ${output_dir}
-  async_llm_client_kwargs:
+  async_llm_client_config:
+    _target_: shinka.llm.AsyncClientConfig
     max_parallel_queries: [4, 4]
     min_seconds_between_api_requests: [10, 1]
 

@@ -19,8 +19,9 @@ from shinka.launch import JobScheduler, JobConfig, ProcessWithLogging
 from shinka.database import ProgramDatabase, DatabaseConfig, Program
 from shinka.llm import (
     LLMClient,
-    AsyncLLMClient,
     extract_between,
+    AsyncLLMClient,
+    AsyncClientConfig,
     EmbeddingClient,
     BanditBase,
     AsymmetricUCB,
@@ -68,8 +69,8 @@ class EvolutionConfig:
     novelty_llm_kwargs: dict = field(default_factory=lambda: {})
     use_text_feedback: bool = False
     num_branches_per_generation: int = 6
-    async_llm_client_kwargs: dict = field(default_factory=lambda: {})
-    novelty_async_llm_client_kwargs: dict = field(default_factory=lambda: {})
+    async_llm_client_config: Optional[AsyncClientConfig] = None
+    novelty_async_llm_client_config: Optional[AsyncClientConfig] = None
 
 
 @dataclass
@@ -1829,16 +1830,13 @@ class TunaEvolutionRunner:
             verbose=verbose,
         )
         
-        client_kwargs = evo_config.async_llm_client_kwargs
-        valid_keys = ['max_parallel_queries', 'min_seconds_between_api_requests']
-        for key in client_kwargs:
-            if key not in valid_keys:
-                raise ValueError(f"async_llm_client_kwargs keys must be one of {valid_keys}")
+        if evo_config.async_llm_client_config is None:
+            raise ValueError("async_llm_client_config cannot be None for TunaEvolutionRunner")
         self.llm = AsyncLLMClient(
+            config=evo_config.async_llm_client_config,
             model_names=evo_config.llm_models,
             model_selection=self.llm_selection,
             **evo_config.llm_kwargs,
-            **client_kwargs,
             verbose=verbose,
         )
         if evo_config.embedding_model is not None:
@@ -1859,16 +1857,12 @@ class TunaEvolutionRunner:
             self.meta_llm = None
 
         if evo_config.novelty_llm_models is not None:
-            novelty_client_kwargs = evo_config.novelty_async_llm_client_kwargs
-            valid_keys = ['max_parallel_queries', 'min_seconds_between_api_requests']
-            for key in novelty_client_kwargs:
-                if key not in valid_keys:
-                    raise ValueError(f"novelty_async_llm_client_kwargs keys must be one of {valid_keys}")
-            
+            if evo_config.novelty_async_llm_client_config is None:
+                raise ValueError("novelty_async_llm_client_config cannot be None for TunaEvolutionRunner") 
             self.novelty_llm = AsyncLLMClient(
+                config=evo_config.novelty_async_llm_client_config,
                 model_names=evo_config.novelty_llm_models,
                 **evo_config.novelty_llm_kwargs,
-                **novelty_client_kwargs,
                 verbose=verbose,
             )
         else:
