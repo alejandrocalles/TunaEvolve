@@ -103,7 +103,17 @@ class DatabaseWrapper:
                         chosen_branch_id=chosen_program.branch_id,
                         rejected_branch_id=rejected_program.branch_id,
                     )
-        dataset = datasets.Dataset.from_generator(row_generator)
+        dataset = datasets.Dataset.from_generator(
+            row_generator,
+            features=datasets.Features({
+                "generation": datasets.Value('int'),
+                "prompt": datasets.List({"role": datasets.Value('str'), "content": datasets.Value('str')}),
+                "chosen": datasets.List({"role": datasets.Value('str'), "content": datasets.Value('str')}),
+                "rejected": datasets.List({"role": datasets.Value('str'), "content": datasets.Value('str')}),
+                "chosen_branch_id": datasets.Value('int32'),
+                "rejected_branch_id": datasets.Value('int32'),
+            })
+        )
         if not isinstance(dataset, (datasets.Dataset, datasets.IterableDataset)):
             raise TypeError("DPO dataset must be an instance of datasets.Dataset or datasets.IterableDataset")
         return dataset

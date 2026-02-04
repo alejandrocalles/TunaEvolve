@@ -287,6 +287,7 @@ class PatchJob:
                     f"Gen {self.current_gen} Branch {self.branch_id} - patch type {self.patch_type}"
                 )
                 llm_response = await self._try_generate_patch(patch_attempt_index=patch_attempt_idx)
+                self.meta_patch_data['llm_result'] = llm_response.to_dict()
                 self._try_parse_and_apply_patch(
                     llm_response=llm_response,
                     patch_attempt_index=patch_attempt_idx

@@ -38,11 +38,6 @@ def launch_dpo(
 
     processor = AutoProcessor.from_pretrained(model_dir)
 
-    if processor.pad_token is None:
-        # TODO: investigate potential fix, e.g. `processor.pad_token = processor.eos_token`
-        logger.error("DPO training failed: DPO requires a pad_token.")
-        return None
-
     training_args = DPOConfig(
         output_dir=checkpoints_dir,
         beta=hyperparameters.beta,
