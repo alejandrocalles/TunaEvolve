@@ -27,8 +27,20 @@ def launch_dpo(
     Args:
         dataset:
             A preference dataset as described in https://huggingface.co/docs/trl/main/en/dataset_formats#preference
-        model_weights_path:
+        model_dir:
             Path to the base model weights.
+        checkpoints_dir:
+            Path to save the model checkpoints to.
+        save_dir:
+            Path to save the final model to.
+        hyperparameters:
+            Hyperparameters specific to DPO training.
+        hardware_config:
+            Configuration for hardware or precision parameters.
+        lora_config:
+            Configuration for Low-Rank Adapters.
+        logging_steps:
+            See `DPOConfig` documentation for the parameter of the same name.
     """
 
     if isinstance(dataset, datasets.Dataset):

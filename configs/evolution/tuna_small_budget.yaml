@@ -6,10 +6,10 @@ evo_config:
   patch_type_probs:
     - 0.5
     - 0.5
-  num_generations: 10
+  num_generations: 20
   max_parallel_jobs: 4
   max_patch_attempts: 10
-  num_branches_per_generation: 4
+  num_branches_per_generation: 8
   llm_models:
     - "gemini-3-flash-preview"
     - "local-google/gemma-3-12b-it"

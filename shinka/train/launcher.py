@@ -9,7 +9,7 @@ from transformers import AutoModelForCausalLM, AutoProcessor
 from shinka.core import TunaEvolutionRunner
 from .dpo import launch_dpo
 from .configuration import DPOTrainingConfig
-from .dataset import DatabaseWrapper
+from .dataset import build_dpo_dataset
 from shinka.vllm import VLLMServer, VLLMConfig
 
 logger = logging.getLogger(__name__)
@@ -27,7 +27,6 @@ class TunaEvolveLauncher:
         self.vllm_config = vllm_config
         self.verbose = verbose
 
-        self.database_wrapper = DatabaseWrapper(evolution_runner.db)
         self.base_output_dir = pathlib.Path(self.training_config.base_output_dir)
 
     async def launch(self) -> None:
@@ -92,7 +91,7 @@ class TunaEvolveLauncher:
             # ==================================================================
             #       Training
             # ==================================================================
-            dataset = self.database_wrapper.build_dpo_dataset()
+            dataset = build_dpo_dataset(self.evolution_runner.db.get_all_programs())
             launch_dpo(
                 dataset=dataset,
                 model_dir=self._save_dir(period_index=period_index),
