@@ -5,6 +5,7 @@ training_config:
   logging_steps: 10
 
   evotune:
+    _target_: shinka.train.configuration.EvoTuneConfig
     training_enabled: true
     num_generations_per_period: 2
 
