@@ -1,5 +1,5 @@
 training_config:
-  _target_: shinka.train.DPOTrainingConfig
+  _target_: shinka.train.configuration.DPOTrainingConfig
   model_id: "google/gemma-3-12b-it"
   base_output_dir: "dpo_checkpoints"
   logging_steps: 10
@@ -9,6 +9,7 @@ training_config:
     num_generations_per_period: 2
 
   hyperparameters:
+    _target_: shinka.train.configuration.DPOHyperparameters
     beta: 0.1
     learning_rate: 5.0e-6
     batch_size: 4
@@ -20,10 +21,12 @@ training_config:
     max_prompt_length: 1024
 
   hardware:
+    _target_: shinka.train.configuration.HardwareConfig
     fp16: true
     bf16: false
 
   lora:
+    _target_: shinka.train.configuration.LoRAConfig
     enabled: true
     r: 16
     alpha: 32
