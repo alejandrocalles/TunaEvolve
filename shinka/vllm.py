@@ -3,7 +3,6 @@ import sys
 import logging
 import subprocess
 import atexit
-import argparse
 import signal
 import enum
 import pathlib
@@ -22,6 +21,7 @@ class VLLMConfig:
     dtype: Literal['auto', 'bfloat16', 'float', 'float16', 'float32', 'half'] = "auto"
     trust_remote_code: bool = False
     log_dir: Optional[pathlib.Path] = None
+    default_startup_timeout: int = 300
 
     def __post_init__(self):
         if isinstance(self.log_dir, str):
@@ -54,13 +54,13 @@ class VLLMServer:
         self._stderr_file: Optional[IO] = None
 
     def __enter__(self):
-        self.start(timeout=300)
+        self.start(timeout=self.config.default_startup_timeout)
         return self
 
     def __exit__(self, exit_type, exit_value, exit_traceback):
-        self.stop(timeout=15)
+        self.stop(timeout=30)
 
-    def start(self, timeout: int = 300) -> None:
+    def start(self, timeout: int) -> None:
         """Start this server"""
 
         # handle cases where the port is already in use
@@ -113,17 +113,17 @@ class VLLMServer:
 
         if not self._wait_for_server_to_start(timeout=timeout):
             logger.error("Timeout waiting for vLLM server to start, exiting...")
-            self.stop(timeout=15)
+            self.stop(timeout=30)
             raise TimeoutError(f"vLLM server failed to start in {timeout}s")
         
         logger.info(f"vLLM server started successfully at {self.address}")
 
 
-    def stop(self, timeout: Optional[int] = 15) -> None:
+    def stop(self, timeout: Optional[int] = 30) -> None:
         """Stop this server."""
-        for handle in [self._stdout_file, self._stderr_file]:
-            if handle is not None and not handle.closed:
-                handle.close()
+        for file_handle in [self._stdout_file, self._stderr_file]:
+            if file_handle is not None and not file_handle.closed:
+                file_handle.close()
         if self.process is None:
             return
         logger.info(f"Stopping vLLM server at {self.address}...")
@@ -139,7 +139,7 @@ class VLLMServer:
             return VLLMServer.PortStatus.IN_USE_BY_THIS_VLLM_PROCESS
         return VLLMServer.PortStatus.IN_USE_BY_OTHER_PROCESS
 
-    def _wait_for_server_to_start(self, timeout: int = 300) -> bool:
+    def _wait_for_server_to_start(self, timeout: int) -> bool:
         """Wait for server to start using the port.
         
         Returns:
@@ -175,6 +175,7 @@ def kill_process_tree(
 
 
 def main():
+    import argparse
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s - %(levelname)s - %(message)s',

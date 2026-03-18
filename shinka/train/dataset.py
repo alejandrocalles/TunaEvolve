@@ -139,14 +139,22 @@ def build_dpo_dataset(
             "chosen_branch_id": datasets.Value('int64'),
             "rejected_branch_id": datasets.Value('int64'),
     })
+
+    # the row_generator is meant to be used with Dataset.from_generator
+    # for efficieny, however, for debugging purposes, we materialize
+    # the rows here and then use Dataset.from_list instead
+    rows = [row for row in row_generator()]
+
+    if not rows:
+
     
     try:
-        dataset = datasets.Dataset.from_generator(
-            row_generator,
-            features=dataset_schema
+        dataset = datasets.Dataset.from_list(
+            rows,
+            features=dataset_schema,
         )
     except Exception as e:
-        logger.error(f"DPO PREFERENCE DATASET NOT GENERATED due to an exception")
+        logger.fatal(f"DPO PREFERENCE DATASET NOT GENERATED due to an exception")
         raise e
 
     logger.info(f"DPO PREFERENCE DATASET GENERATED")
