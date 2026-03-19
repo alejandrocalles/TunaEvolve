@@ -1,5 +1,7 @@
+TunaEvolve is a fork of ShinkaEvolve.
+You can find information specific to TunaEvolve [here](./docs/tuna_evolve.md).
+
 The following document is the README for the original ShinkaEvolve project.
-For TunaEvolve, please refer to [this document](./docs/tuna_evolve.md)
 
 ---
 
