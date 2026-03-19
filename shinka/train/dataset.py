@@ -144,9 +144,6 @@ def build_dpo_dataset(
     # for efficieny, however, for debugging purposes, we materialize
     # the rows here and then use Dataset.from_list instead
     rows = [row for row in row_generator()]
-
-    if not rows:
-
     
     try:
         dataset = datasets.Dataset.from_list(
