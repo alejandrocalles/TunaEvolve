@@ -33,11 +33,15 @@ documentation. If something seems confusing, consider referring to the
 Hydra for structuring configuration files, you might find the
 [Hydra documentation](https://hydra.cc/docs/intro/) useful as well.
 
+The main configuration file for TunaEvolve is no longer [configs/config.yaml](../configs/config.yaml),
+but [configs/tuna\_config.yaml](../configs/tuna_config.yaml).
+
 TunaEvolve adds two core configuration components: inference and training.
 
 ### 1. Training Config
 
 Controls the parameters for the training step of the EvoTune algorithm.
+Should be placed in [configs/training/](../configs/training/).
 
 ```yaml
 training_config:
@@ -92,6 +96,7 @@ from HuggingFace's `peft` package.
 ### 2. Inference Config
 
 Controls the parameters for launching the trained model locally (for inference) using vLLM.
+Should be placed in [configs/inference/](../configs/inference/).
 
 ```yaml
 vllm_config:
@@ -112,4 +117,37 @@ If you have 2 nodes with 4 GPUs each, set `tensor_parallel_size: 4` and `pipelin
 For more information on parallelism, refer to the following guides:
 - [vLLM Parallelism and Scaling Guide](https://docs.vllm.ai/en/stable/serving/parallelism_scaling/)
 - [vLLM Distributed Serving Guide](https://docs.vllm.ai/en/v0.8.0/serving/distributed_serving.html)
+
+### Main configuration file
+
+As mentioned previously, the main configuration file is [configs/tuna\_config.yaml](../configs/tuna_config.yaml),
+and has the following structure.
+
+```yaml
+defaults:
+  - _self_
+  - database@_global_: island_small
+  - evolution@_global_: small_budget
+  - task@_global_: linear_codes
+  - cluster@_global_: local
+  - training@_global_: dpo
+  - inference@_global_: single_gpu
+  - variant@_global_: tuna_linear_codes_example
+
+verbose: true
+results_dir: results
+run_name: ${now:%Y.%m.%d}${now:%H%M%S}
+
+output_dir: ${results_dir}/${exp_name}/${run_name}${variant_suffix}
+
+hydra:
+  run:
+    dir: ${output_dir}
+```
+
+In order to change the core configuration components that will be loaded, you should change the appropriate
+entry under `defaults`.
+For instance, to load [configs/inference/single\_node.yaml](../configs/inference/single_node.yaml) instead of
+[configs/inference/single\_gpu.yaml](../configs/inference/single_gpu.yaml), `inference@_global_: single_gpu`
+should be changed to `inference@_global_: single_node`.
 
