@@ -26,8 +26,8 @@ def adapted_validate_codes(
     """
     code, weight_dist, minimum_dist = run_output
 
-    n=80
-    k=20
+    n=50
+    k=12
     galois_code = galois.GF(2)(code)
 
     if not isinstance(code, np.ndarray):
@@ -52,7 +52,7 @@ def aggregate_linear_codes_metrics(
     """
     if not results:
         return {"combined_score": 0.0, "error": "No results to aggregate"}
-    dist=26
+    dist=18
     code, weight_dist, minimum_dist = results[0]
     new_score = - sum([weight_dist[j] * 0.92 ** (j + 1) for j in range(1, dist+1)])
     weight_dist=np.array(weight_dist)

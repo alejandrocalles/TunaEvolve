@@ -50,6 +50,10 @@ dependencies = [
     "vllm>=0.13.0",
     "psutil>=7.2.0",
     "aiolimiter>=1.2.1",
+    "datasets>=4.5.0",
+    "peft>=0.18.1",
+    "trl>=0.27.1",
+    "transformers>=4.57.6",
 ]
 
 [tool.setuptools]

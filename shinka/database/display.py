@@ -469,8 +469,8 @@ class DatabaseDisplay:
                 correct_str,
                 score_str,
                 f"{prog.complexity:.1f}",
-                prog.metadata.get("patch_name", "N/A")[:30],
-                prog.metadata.get("patch_type", "N/A")[:6],
+                (prog.metadata.get("patch_name") or "N/A")[:30],
+                (prog.metadata.get("patch_type") or "N/A")[:6],
                 island_display,
                 str(children_count),
                 ts_str,
@@ -600,8 +600,8 @@ class DatabaseDisplay:
                     time_display = f"{time_val:.1f}s"
 
             # Patch name and type
-            patch_name = prog.metadata.get("patch_name", "[dim]N/A[/dim]")[:30]
-            patch_type = prog.metadata.get("patch_type", "[dim]N/A[/dim]")
+            patch_name = (prog.metadata.get("patch_name") or "[dim]N/A[/dim]")[:30]
+            patch_type = prog.metadata.get("patch_type") or "[dim]N/A[/dim]"
 
             return [
                 role_name,
