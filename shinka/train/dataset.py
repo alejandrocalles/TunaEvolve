@@ -146,7 +146,9 @@ def build_dpo_dataset(
     rows = [row for row in row_generator()]
 
     if not rows:
-
+        message = "DPO PREFERENCE DATASET NOT GENERATED because no generation had enough valid programs"
+        logger.fatal(message)
+        raise ValueError(message)
     
     try:
         dataset = datasets.Dataset.from_list(
